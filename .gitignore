@@ -1,0 +1,40 @@
+# Secrets
+.env
+.auth/
+*.session.json
+storage_state*.json
+
+# Browser profiles - these hold real cookies, saved logins, VPN tokens and
+# history. Never commit one. Match any profile directory, not just the two
+# this project happens to create today, so a new POC cannot leak one.
+.edge-profile/
+.poc-persistent-edge-profile/
+*-edge-profile/
+*.edge-profile/
+
+# Screenshots may contain internal system data - keep local only
+screenshots/*.png
+screenshots/*.jpg
+!screenshots/.gitkeep
+
+# Discovered selectors may reveal internal app structure - review before sharing
+config/selectors.discovered.json
+
+# Network diagnostics logs (E) - field names/status codes only, no
+# secrets by design, but still internal system structure - local only
+logs/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# Playwright
+test-results/
+playwright-report/
+
+# Pytest
+.pytest_cache/
+.cache/

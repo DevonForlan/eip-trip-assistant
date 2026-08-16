@@ -1,0 +1,8 @@
+playwright>=1.45.0
+python-dotenv>=1.0.0
+
+# HTTP + Windows SSPI research track (scripts/http_eip_explorer.py) -
+# independent of the Playwright/CDP track above, see docs/http-webforms-poc.md.
+# Windows-only.
+requests>=2.32.0
+requests-negotiate-sspi>=0.5.2
