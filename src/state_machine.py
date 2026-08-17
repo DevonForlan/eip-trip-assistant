@@ -83,16 +83,18 @@ class TripFlow:
             allowed = ALLOWED_TRANSITIONS.get(self.state, set())
             if new_state not in allowed:
                 raise InvalidTransitionError(
-                    f"不允許的狀態轉換：{self.state.value} -> {new_state.value}"
-                    f"（{reason or '無說明'}）。允許的下一步：{sorted(s.value for s in allowed)}"
+                    f"Illegal state transition: {self.state.value} -> {new_state.value}"
+                    f" ({reason or 'no reason given'}). Allowed next states: "
+                    f"{sorted(s.value for s in allowed)}"
                 )
         self.history.append((self.state, new_state, reason))
         self.state = new_state
 
         if new_state is TripState.SESSION_EXPIRED:
             raise SessionExpiredError(
-                f"Session 已過期（於「{reason or '未知步驟'}」偵測到），流程立即停止。"
-                "禁止自動重新送出 - 請重新登入 EIP 後，重新確認一次要送出的資料再重試。"
+                f"Session expired (detected at: {reason or 'unknown step'}); the flow stops here. "
+                "Never auto-resubmit - log back into EIP, re-confirm the data to send, "
+                "and start a new attempt."
             )
         return self.state
 

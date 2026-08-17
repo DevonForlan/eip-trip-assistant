@@ -49,7 +49,7 @@ def test_plain_confirm_is_accepted():
     recorder = DialogRecorder()
     page = FakePage()
     recorder.attach(page)
-    dialog = FakeDialog("confirm", "確定要送出嗎？")
+    dialog = FakeDialog("confirm", "Send this form?")
     page.listener(dialog)
     recorder.detach()
 
@@ -75,7 +75,7 @@ def test_alert_is_never_auto_accepted():
     recorder = DialogRecorder()
     page = FakePage()
     recorder.attach(page)
-    dialog = FakeDialog("alert", "該作業尚未設定彈性欄位!")
+    dialog = FakeDialog("alert", "This feature is not configured!")
     page.listener(dialog)
     recorder.detach()
 
@@ -89,7 +89,7 @@ def test_prompt_is_never_auto_accepted():
     recorder = DialogRecorder()
     page = FakePage()
     recorder.attach(page)
-    dialog = FakeDialog("prompt", "請輸入原因")
+    dialog = FakeDialog("prompt", "Enter a reason")
     page.listener(dialog)
     recorder.detach()
 

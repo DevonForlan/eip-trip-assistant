@@ -3,7 +3,8 @@
 Needed because "does a page/tab matching example.com exist" (the old
 check in eip_client.find_existing_page) is not the same question as "is
 this tab actually still logged in" - ChromeADLogout.htm and the
-"Session過期" page both still live under the eip.example.com host, so
+the "Session過期" (session expired) page both still live under the
+eip.example.com host, so
 that substring match alone cannot tell an expired session from a live
 one. Confirmed by hand during Phase 2 testing: a stale session
 mid-postback redirected to ChromeADLogout.htm, and code that only

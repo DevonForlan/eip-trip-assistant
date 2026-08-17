@@ -49,7 +49,7 @@ SUBMITTED = "http://eip/EFNET/src/_Common/AppUtil/FlowChart/FlowChart.aspx?Sheet
 
 def test_wait_for_banner_frame_tolerates_a_still_assembling_frameset():
     """A reload can leave titlebar1.aspx briefly absent; failing instantly
-    reported '畫面可能已改版' for a page that was merely settling."""
+    reported "the page may have changed" for a page that was merely settling."""
     page = FakePage(frames_over_time=[
         [FakeFrame("http://eip/EFNET/")],
         [FakeFrame("http://eip/EFNET/")],
@@ -108,12 +108,12 @@ def test_open_trip_form_reuses_an_already_open_editable_form(monkeypatch):
     page = FakePage(frames=[FakeFrame(BANNER, "banner"), platform, FakeFrame(TRIP_FORM, "framePlus")])
 
     assert eip_client.open_trip_form(page) is page
-    assert closed == [], "既有的可編輯表單絕不能被關閉"
+    assert closed == [], "an already-open editable form must never be closed"
 
 
 def test_open_trip_form_reactivates_a_backgrounded_form(monkeypatch):
     """Regression from a live run: a previous duplicate check leaves the
-    sidebar in 表單追蹤處理 mode, which hides the trip-form tab. Returning
+    sidebar in form-tracking mode, which hides the trip-form tab. Returning
     it as-is made the caller's first fill() fail with 'element is not
     visible'."""
     reactivated = []
@@ -150,7 +150,7 @@ def test_open_trip_form_can_opt_out_of_closing(monkeypatch):
     monkeypatch.setattr(eip_client, "has_trip_form_tab", lambda page: True)
 
     def fake_close(page, timeout_ms=10000):
-        raise AssertionError("close_stale_tab=False 時不應該關閉分頁籤")
+        raise AssertionError("must not close the tab when close_stale_tab=False")
 
     monkeypatch.setattr(eip_client, "close_trip_form_tab", fake_close)
     monkeypatch.setattr(eip_client, "wait_for_banner_frame", lambda page, timeout_ms=10000: None)
@@ -168,4 +168,4 @@ def test_banner_error_message_points_at_retrying_not_only_a_redesign(monkeypatch
     with pytest.raises(RuntimeError) as excinfo:
         eip_client.open_trip_form(page)
 
-    assert "重試" in str(excinfo.value)
+    assert "retry" in str(excinfo.value)

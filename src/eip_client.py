@@ -1,4 +1,4 @@
-"""Navigate the EIP portal and open the trip-registration (出差登記) form.
+"""Navigate the EIP portal and open the trip-registration form.
 
 Verified in Phase 1 (see docs/eip-analysis.md):
 - EIP requires Windows Integrated Auth that Playwright cannot complete on
@@ -6,7 +6,7 @@ Verified in Phase 1 (see docs/eip-analysis.md):
   VPN + a debug Edge launched with the EIP URL as a command-line argument
   (so NTLM SSO fires automatically) - never from a Playwright-navigated
   page.
-- "出差登記" is triggered by clicking a shortcut in the banner frame
+- The trip-registration shortcut lives in the banner frame
   (titlebar1.aspx). That JS-injects a NEW iframe into the page rather
   than navigating, so the result is a new Frame, not a new Page/popup.
 - The form fields live in one frame (ESS/ESSF21/ESSF21.aspx); the
@@ -55,9 +55,10 @@ def open_homepage(context):
         time.sleep(0.5)
 
     raise RuntimeError(
-        "找不到已登入的 EIP 分頁。這代表 browser.attach_context 啟動的 Edge 沒有"
-        "成功導覽到 EIP（可能還在重試或卡在錯誤畫面），請重新執行，"
-        "或參考錯誤訊息裡的手動指令自行開啟並確認登入成功。"
+        "No logged-in EIP tab found. The Edge that browser.attach_context launched "
+        "never reached EIP - it may still be retrying, or stuck on an error page. "
+        "Run this again, or launch Edge yourself using the command printed on failure "
+        "and confirm you are logged in."
     )
 
 
@@ -87,7 +88,7 @@ def wait_for_banner_frame(page, timeout_ms: int = 10000):
 
     The frameset assembles asynchronously, so right after the homepage
     loads (or reloads) page.frames can be missing titlebar1.aspx for a
-    moment. Failing instantly on that produced a "畫面可能已改版" error for
+    moment. Failing instantly on that produced a "the page may have changed" error for
     what was really just a page that had not finished settling - observed
     live, where an immediate retry succeeded with no other change.
     """
@@ -108,16 +109,16 @@ def _find_platform_frame(page):
     return None
 
 
-# The "出差登記.." tab is a jQuery UI Tabs widget in platform.aspx - its
+# The trip-registration tab is a jQuery UI Tabs widget in platform.aspx - its
 # anchor id is the ESS form code, verified by hand (not guessed) by
 # walking up from the visible tab text to its containing <li>/<a>.
 TRIP_FORM_TAB_ANCHOR_SELECTOR = "#ESSF21"
 
 
 def reactivate_trip_form_tab(page, timeout_ms: int = 5000) -> bool:
-    """Bring the already-open "出差登記" tab back to the foreground.
+    """Bring the already-open trip-registration tab back to the foreground.
 
-    Needed because switching the sidebar into 表單追蹤處理 mode (see
+    Needed because switching the sidebar into form-tracking mode (see
     duplicate_check.find_existing_submission) backgrounds whichever
     platform.aspx tab was active - its content becomes hidden
     (fails Playwright's visibility check), not just unfocused. Any
@@ -137,7 +138,7 @@ def reactivate_trip_form_tab(page, timeout_ms: int = 5000) -> bool:
 
 
 def has_trip_form_tab(page) -> bool:
-    """Whether platform.aspx still shows a 出差登記 tab, regardless of what
+    """Whether platform.aspx still shows a trip-registration tab, regardless of what
     that tab currently contains."""
     platform_frame = _find_platform_frame(page)
     if platform_frame is None:
@@ -153,7 +154,7 @@ def has_trip_form_tab(page) -> bool:
 
 
 def close_trip_form_tab(page, timeout_ms: int = 10000) -> bool:
-    """Close the 出差登記 tab via its own close icon. Returns True once the
+    """Close the trip-registration tab via its own close icon. Returns True once the
     tab is gone.
 
     Clicking the icon through the DOM rather than driving the underlying
@@ -193,7 +194,7 @@ def close_trip_form_tab(page, timeout_ms: int = 10000) -> bool:
 def find_tree_frame(page):
     """The left-hand sidebar frame (tree.aspx) - hosts both the
     application-shortcut tree used by open_trip_form() and, after
-    clicking 表單追蹤處理 (#tdBar4), the form-tracking folder tree used
+    clicking the form-tracking button (#tdBar4), the folder tree used
     by duplicate_check.find_existing_submission()."""
     for f in page.frames:
         if "tree.aspx" in f.url:
@@ -202,7 +203,7 @@ def find_tree_frame(page):
 
 
 def open_trip_form(page, timeout_ms: int = 25000, close_stale_tab: bool = True):
-    """Click the "出差登記" shortcut (if the form isn't already open) and
+    """Click the trip-registration shortcut (if the form isn't already open) and
     wait for its content frame to finish loading.
 
     Returns `page`. The fields and the Send/Save buttons live in two
@@ -210,7 +211,7 @@ def open_trip_form(page, timeout_ms: int = 25000, close_stale_tab: bool = True):
     find_trip_form_wrapper_frame(page) to reach the right one.
 
     close_stale_tab handles filing several trips in one session. After a
-    successful send the 出差登記 tab remains, but now shows the submitted
+    successful send the trip-registration tab remains, but now shows the submitted
     document read-only (FlowChart.aspx), so there is no editable ESSF21
     frame any more. Clicking the shortcut in that state merely re-activates
     the existing tab, no new form loads, and this used to time out - which
@@ -221,7 +222,7 @@ def open_trip_form(page, timeout_ms: int = 25000, close_stale_tab: bool = True):
     the branch below returns before any of this, so a half-filled form
     cannot be discarded by accident. It is brought back to the foreground
     first, though - an earlier duplicate check may have switched the
-    sidebar into 表單追蹤處理 mode, which leaves the trip-form tab present
+    sidebar into form-tracking mode, which leaves the trip-form tab present
     but hidden, and callers would then hit "element is not visible" on the
     first fill.
     """
@@ -237,8 +238,9 @@ def open_trip_form(page, timeout_ms: int = 25000, close_stale_tab: bool = True):
     banner = wait_for_banner_frame(page)
     if banner is None:
         raise RuntimeError(
-            "等不到 banner frame（titlebar1.aspx）。若畫面才剛載入，可稍後重試；"
-            "若持續發生，畫面可能已改版，請重新執行 scripts/inspect_eip.py 確認。"
+            "Timed out waiting for the banner frame (titlebar1.aspx). If the page has "
+            "only just loaded, retry shortly; if it keeps happening the page layout may "
+            "have changed - re-run scripts/inspect_eip.py to check."
         )
 
     existing_frame_urls = {f.url for f in page.frames}
@@ -256,8 +258,8 @@ def open_trip_form(page, timeout_ms: int = 25000, close_stale_tab: bool = True):
             clicked = True
     if not clicked:
         raise RuntimeError(
-            "找不到「出差登記」按鈕，畫面可能已改版，請重新執行 "
-            "scripts/inspect_eip.py 確認。"
+            "Trip-registration shortcut not found; the page layout may have changed - "
+            "re-run scripts/inspect_eip.py to check."
         )
 
     deadline = time.time() + timeout_ms / 1000
@@ -272,4 +274,7 @@ def open_trip_form(page, timeout_ms: int = 25000, close_stale_tab: bool = True):
             return page
         page.wait_for_timeout(300)
 
-    raise TimeoutError("點擊「出差登記」後，等不到表單載入完成，請人工確認畫面狀態。")
+    raise TimeoutError(
+        "Clicked the trip-registration shortcut but the form never finished loading. "
+        "Check the screen state by hand."
+    )

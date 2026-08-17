@@ -14,7 +14,7 @@ What this script does:
      (via the Chrome DevTools Protocol). No password is ever read,
      stored, or typed by this script.
   2. Analyzes the homepage DOM (including all frames) and locates the
-     "出差登記" element by inspecting real DOM text/attributes - it does
+     trip-registration element by inspecting real DOM text/attributes - it does
      NOT assume a fixed selector.
   3. Clicks it, detects whether that opens a popup window, navigates the
      same page, or loads content into a frame.
@@ -75,7 +75,7 @@ EDGE_EXE = os.environ.get(
 EDGE_PROFILE_DIR = ROOT / ".edge-profile"
 
 # Candidate texts to look for, in priority order. The actual label on a
-# 15+ year old ASP.NET portal might not be exactly "出差登記" - all
+# 15+ year old ASP.NET portal might not use exactly the expected wording - all
 # candidates that match are recorded so a human can confirm the right one.
 TRIGGER_TEXT_CANDIDATES = ["出差登記", "出差申請", "出差"]
 
@@ -333,9 +333,9 @@ def enumerate_form_elements(target_page) -> list[dict]:
 
 def render_element_table(rows: list[dict]) -> str:
     if not rows:
-        return "_（未找到任何元素）_\n"
+        return "_(no elements found)_\n"
     header = (
-        "| tag | type | id | name | label（推測） | text | frame | 建議 selector |\n"
+        "| tag | type | id | name | label (guessed) | text | frame | suggested selector |\n"
         "|---|---|---|---|---|---|---|---|\n"
     )
     lines = [header]
@@ -360,123 +360,129 @@ def render_element_table(rows: list[dict]) -> str:
 
 def build_markdown(data: dict) -> str:
     md = []
-    md.append("# EIP - 出差登記 網站探索分析報告\n")
-    md.append(f"\n產出時間：{data['timestamp']}\n")
+    md.append("# EIP trip-registration - site exploration report\n")
+    md.append(f"\nGenerated: {data['timestamp']}\n")
     md.append(f"\nEIP URL：{data['eip_url']}\n")
 
-    md.append("\n## 1. 首頁結構\n")
-    md.append(f"\n- 首頁標題：{data['home_title']}\n")
-    md.append(f"- 首頁 URL：{data['home_url']}\n")
-    md.append(f"- Frame 數量：{len(data['home_frames'])}\n")
+    md.append("\n## 1. Homepage structure\n")
+    md.append(f"\n- Title: {data['home_title']}\n")
+    md.append(f"- URL: {data['home_url']}\n")
+    md.append(f"- Frame count: {len(data['home_frames'])}\n")
     if len(data['home_frames']) > 1:
-        md.append("- **偵測到多個 frame（可能是傳統 frameset 或 iframe 結構）**\n")
+        md.append("- **Multiple frames detected (a classic frameset or nested iframes)**\n")
     md.append("\n| # | name | url | is_main |\n|---|---|---|---|\n")
     for i, f in enumerate(data['home_frames']):
         md.append(f"| {i} | {f['name'] or ''} | {f['url']} | {f['is_main']} |\n")
 
-    md.append("\n## 2. 「出差登記」觸發元素\n")
+    md.append("\n## 2. The trip-registration trigger element\n")
     trig = data['trigger']
     if trig['matched_text']:
-        md.append(f"\n以文字關鍵字 `{trig['matched_text']}` 找到 {len(trig['candidates'])} 個候選元素"
-                   "（依可能性排序，非唯一猜測 - 請人工確認正確項目）：\n\n")
+        md.append(f"\nSearching for the text `{trig['matched_text']}` found "
+                  f"{len(trig['candidates'])} candidate elements, ranked by likelihood. "
+                  "These are candidates, not a single guess - confirm the right one by hand:\n\n")
         ranked = sorted(trig['candidates'], key=score_candidate, reverse=True)
         md.append(render_element_table(ranked))
-        md.append("\n完整資訊（含 outerHTML / xpath）另存於 `config/selectors.discovered.json`。\n")
+        md.append("\nFull detail (including outerHTML / xpath) is written to "
+                  "`config/selectors.discovered.json`.\n")
     else:
-        md.append("\n**未找到任何符合的元素。** 嘗試過的關鍵字："
+        md.append("\n**No matching element found.** Keywords tried: "
                    f"{', '.join(TRIGGER_TEXT_CANDIDATES)}。"
-                   "可能原因：文字為圖片、iframe 尚未載入、或使用了不同用字，"
-                   "請查看 screenshots/ 內的截圖並回報實際畫面文字。\n")
+                  "Possible causes: the label is an image, the iframe had not loaded yet, "
+                  "or the wording differs. Check the screenshots in screenshots/ and report "
+                  "the actual on-screen text.\n")
 
-    md.append("\n## 3. 點擊後的行為\n")
+    md.append("\n## 3. What happens on click\n")
     cc = data.get('clicked_candidate')
     if cc:
         md.append(
-            f"\n- 實際成功點擊的元素：tag=`{cc['tag']}` id=`{cc.get('id')}` "
+            f"\n- The element that was actually clicked: tag=`{cc['tag']}` id=`{cc.get('id')}` "
             f"frame=`{cc.get('frame_url')}`\n"
         )
         if cc.get("href", "") and cc["href"].startswith("javascript:"):
-            md.append(f"- 該元素的 href 是一段 JS 呼叫：`{cc['href']}`\n")
-            md.append("  Phase 2 可考慮直接在對應 frame 呼叫這段 JS（例如透過 "
-                       "`frame.evaluate(...)`），會比模擬滑鼠點擊一個可能被樹狀選單收合、"
-                       "需要先展開才能看到的節點更穩定。\n")
+            md.append(f"- Its href is a JS call: `{cc['href']}`\n")
+            md.append("  Calling that JS directly in the owning frame (via "
+                      "`frame.evaluate(...)`) is more robust than clicking a node that may "
+                      "be collapsed inside the sidebar tree and need expanding first.\n")
     else:
-        md.append("\n- **沒有任何候選元素點擊成功**，請查看 screenshots/03_click_error.png"
-                   " 並人工確認正確的觸發方式。\n")
-    md.append(f"\n- 偵測結果：**{data['click_mode']}**\n")
+        md.append("\n- **No candidate could be clicked successfully.** See "
+                  "screenshots/03_click_error.png and confirm the correct trigger by hand.\n")
+    md.append(f"\n- Detected mode: **{data['click_mode']}**\n")
     if data['click_mode'] == "popup":
-        md.append("  （點擊後開啟了新的瀏覽器視窗/分頁 - Playwright 以 `context.expect_page` 追蹤）\n")
+        md.append("  (The click opened a new window/tab - tracked via `context.expect_page`.)\n")
     else:
-        md.append("  （沒有新視窗；同一個 Page 內以導覽或 frame 內容更新方式呈現）\n")
-    md.append(f"- 表單頁 URL：{data['form_url']}\n")
-    md.append(f"- 表單頁 Frame 數量：{len(data['form_frames'])}\n")
+        md.append("  (No new window; the same Page either navigated or updated frame content.)\n")
+    md.append(f"- Form page URL: {data['form_url']}\n")
+    md.append(f"- Form page frame count: {len(data['form_frames'])}\n")
     md.append("\n| # | name | url | is_main |\n|---|---|---|---|\n")
     for i, f in enumerate(data['form_frames']):
         md.append(f"| {i} | {f['name'] or ''} | {f['url']} | {f['is_main']} |\n")
 
-    md.append("\n## 4. 出差申請表單欄位清單\n")
-    md.append(f"\n共找到 {len(data['form_elements'])} 個 input / select / textarea / button 元素"
-               "（跨所有 frame 遞迴掃描）：\n\n")
+    md.append("\n## 4. Form fields\n")
+    md.append(f"\n{len(data['form_elements'])} input / select / textarea / button elements "
+              "found, scanning all frames recursively:\n\n")
     md.append(render_element_table(data['form_elements']))
 
     checkboxes = [e for e in data['form_elements'] if e.get('type') == 'checkbox']
     radios = [e for e in data['form_elements'] if e.get('type') == 'radio']
     selects = [e for e in data['form_elements'] if e.get('tag') == 'select']
     if checkboxes:
-        md.append(f"\n### Checkbox（共 {len(checkboxes)}）\n\n")
+        md.append(f"\n### Checkboxes ({len(checkboxes)})\n\n")
         md.append(render_element_table(checkboxes))
     if radios:
-        md.append(f"\n### Radio（共 {len(radios)}）\n\n")
+        md.append(f"\n### Radios ({len(radios)})\n\n")
         md.append(render_element_table(radios))
     if selects:
-        md.append(f"\n### Select 選項內容\n\n")
+        md.append("\n### Select options\n\n")
         for s in selects:
             opts = s.get('options') or []
             opt_str = ", ".join(f"{o['text']}({o['value']})" for o in opts[:20])
             md.append(f"- `{s.get('id') or s.get('name') or s.get('cssPath')}`：{opt_str}\n")
 
-    md.append("\n## 5. 截圖清單\n\n")
+    md.append("\n## 5. Screenshots\n\n")
     for name in data['screenshots']:
         md.append(f"- `screenshots/{name}`\n")
 
-    md.append("\n## 6. Session 保存\n")
+    md.append("\n## 6. Session handling\n")
     md.append(f"\n- {data.get('session_note', '')}\n")
-    md.append("- EIP 要求 Windows 整合驗證（NTLM/Negotiate），Playwright 自行啟動的瀏覽器"
-               "無法完成這個驗證且不會顯示原生登入框，因此改用「連線到你手動啟動並登入的 Edge」"
-               "（Chrome DevTools Protocol attach）方式，而非 Playwright 產生/保存的 "
-               "storage_state 檔案。\n")
-    md.append(f"- Edge 使用獨立的 profile 目錄 `{EDGE_PROFILE_DIR}`（已加入 .gitignore），"
-               "只要不刪除這個目錄，下次直接照第一步指令重新啟動 Edge，通常不需要再次登入"
-               "（除非 session 已在伺服器端過期）。\n")
+    md.append("- EIP requires Windows Integrated Authentication (NTLM/Negotiate). A browser "
+              "Playwright launches itself cannot complete that handshake and surfaces no "
+              "native credential prompt, so this attaches over the Chrome DevTools Protocol "
+              "to an Edge that is already logged in, rather than using a Playwright-managed "
+              "storage_state file.\n")
+    md.append(f"- Edge uses its own profile directory `{EDGE_PROFILE_DIR}` (gitignored). "
+              "As long as that directory survives, relaunching Edge with the same command "
+              "usually needs no fresh login, unless the server-side session has expired.\n")
 
-    md.append("\n## 7. 給 Phase 2 的建議\n")
-    md.append("\n- 完整原始資料（含 outerHTML、xpath、cssPath）已寫入 "
-               "`config/selectors.discovered.json`，Phase 2 的 `src/trip_form.py` "
-               "應以此檔案為主要依據，而非重新猜測 selector。\n")
-    md.append("- 若欄位 id 看起來像 ASP.NET WebForms 自動產生的長 id"
-               "（例如 `ctl00_ContentPlaceHolder1_txtDate`），優先用 `id` 或 `name` 精確匹配，"
-               "避免用文字內容做選擇（文字可能因語系/版本而變動）。\n")
-    md.append("- 若表單位於 iframe 或 popup 內，Phase 2 填表前務必先取得對應的 "
-               "`Frame`/`Page` 物件，再對該物件操作，不能直接對最外層 `page` 操作。\n")
-    md.append("- 送出前所有欄位務必先做「必填檢查」與「內容回顯確認」，"
-               "並等待使用者輸入 `y` 才能呼叫送出按鈕，任何情況下都不可自動送出。\n")
+    md.append("\n## 7. Notes for building the automation\n")
+    md.append("\n- The full raw data (outerHTML, xpath, cssPath) is written to "
+              "`config/selectors.discovered.json`. Base `src/trip_form.py` on that file "
+              "rather than guessing selectors again.\n")
+    md.append("- Where ids look like ASP.NET WebForms generated names (e.g. "
+              "`ctl00_ContentPlaceHolder1_txtDate`), match exactly on `id` or `name` rather "
+              "than on visible text, which can shift with locale or version.\n")
+    md.append("- When the form lives in an iframe or popup, obtain that `Frame`/`Page` "
+              "object first and operate on it - never on the outermost `page`.\n")
+    md.append("- Before sending, always check required fields and read the values back from "
+              "the live page for the user to confirm. Only call the send button after an "
+              "explicit `y`; never send automatically.\n")
 
     return "".join(md)
 
 
 def print_edge_launch_instructions():
     EDGE_PROFILE_DIR.mkdir(exist_ok=True)
-    print("\n請先手動啟動一個可被自動化連線的 Edge（獨立設定檔，不影響你平常的 Edge）：\n")
+    print("\nLaunch an automation-attachable Edge first. It uses its own profile, so your "
+          "everyday Edge is unaffected:\n")
     print(f'  & "{EDGE_EXE}" --remote-debugging-port=9222 --user-data-dir="{EDGE_PROFILE_DIR}"\n')
-    print("視窗開啟後，請在裡面前往 EIP 並完成登入：")
+    print("Once the window opens, go to EIP in it and log in:")
     print(f"  {EIP_URL}")
-    print("確認已經看到登入後的首頁，再回來重新執行本程式：")
+    print("Confirm you can see the logged-in homepage, then run this program again:")
     print("  python scripts/inspect_eip.py\n")
 
 
 def main():
     print(f"EIP URL: {EIP_URL}")
-    print(f"嘗試連線到已啟動的 Edge（CDP: {browser_mod.CDP_URL}）...\n")
+    print(f"Connecting to the running Edge (CDP: {browser_mod.CDP_URL})...\n")
 
     with sync_playwright() as pw:
         try:
@@ -488,15 +494,15 @@ def main():
 
         page = browser_mod.find_existing_page(context, EIP_URL_FRAGMENT)
         if page is None:
-            print(f"[info] 目前沒有開著的 EIP 分頁，開一個新分頁並導向 {EIP_URL} ...")
+            print(f"[info] No EIP tab is open; opening a new tab at {EIP_URL} ...")
             page = context.new_page()
             page.goto(EIP_URL, wait_until="domcontentloaded")
         else:
-            print(f"[info] 找到現有分頁：{page.url}")
+            print(f"[info] Found an existing tab: {page.url}")
 
         input(
-            "\n>>> 請確認 Edge 視窗中目前是「登入後」的 EIP 首頁，"
-            "確認後回到這個終端機按 Enter 繼續... "
+            "\n>>> Confirm the Edge window is showing the logged-in EIP homepage, "
+            "then come back here and press Enter to continue... "
         )
 
         screenshots = [shot(page, "01_home_after_attach.png")]
@@ -504,11 +510,12 @@ def main():
         home_frames = list_frames(page)
         home_title = page.title()
         home_url = page.url
-        print(f"[info] 首頁 frame 數量：{len(home_frames)}")
+        print(f"[info] Homepage frame count: {len(home_frames)}")
 
-        print("[info] 搜尋「出差登記」相關元素...")
+        print("[info] Searching for the trip-registration element...")
         trigger = find_trigger_candidates(page)
-        print(f"[info] 找到 {len(trigger['candidates'])} 個候選元素（關鍵字：{trigger['matched_text']}）")
+        print(f"[info] Found {len(trigger['candidates'])} candidates "
+              f"(keyword: {trigger['matched_text']})")
 
         screenshots.append(shot(page, "02_before_click_trip_registration.png"))
 
@@ -525,7 +532,7 @@ def main():
                 frame_idx = candidate["_frame_ref_index"]
                 target_frame = page.frames[frame_idx]
                 print(
-                    f"[info] 嘗試點擊候選元素：tag={candidate['tag']} id={candidate.get('id')} "
+                    f"[info] Trying candidate: tag={candidate['tag']} id={candidate.get('id')} "
                     f"visible={candidate.get('visible')} text={candidate.get('text')!r}"
                 )
                 try:
@@ -536,18 +543,18 @@ def main():
                     form_frames = list_frames(target_page)
                     screenshots.append(shot(target_page, "03_trip_form_page.png"))
 
-                    print("[info] 掃描表單欄位（input/select/textarea/button，跨所有 frame）...")
+                    print("[info] Scanning form fields (input/select/textarea/button, all frames)...")
                     form_elements = enumerate_form_elements(target_page)
-                    print(f"[info] 共找到 {len(form_elements)} 個欄位/按鈕元素")
+                    print(f"[info] Found {len(form_elements)} field/button elements")
                     clicked_candidate = candidate
                     break
                 except (PlaywrightError, PlaywrightTimeoutError) as e:
-                    print(f"[warn] 這個候選元素點擊失敗，嘗試下一個：{e}")
+                    print(f"[warn] That candidate could not be clicked; trying the next: {e}")
             if clicked_candidate is None:
-                print("[warn] 所有候選元素都點擊失敗，略過表單頁分析。")
+                print("[warn] No candidate could be clicked; skipping form-page analysis.")
                 screenshots.append(shot(page, "03_click_error.png"))
         else:
-            print("[warn] 未找到任何「出差登記」候選元素，略過點擊步驟。")
+            print("[warn] No trip-registration candidate found; skipping the click step.")
 
         data = {
             "timestamp": now_str(),
@@ -563,21 +570,22 @@ def main():
             "form_elements": form_elements,
             "screenshots": screenshots,
             "session_note": (
-                "此次分析是連線到你手動啟動並登入的 Edge (CDP attach)，"
-                "並非由本程式建立/儲存的 session 檔案。"
+                "This analysis attached over CDP to an Edge the user launched and logged "
+                "into; no session file is created or stored by this program."
             ),
         }
 
         DISCOVERED_JSON_PATH.write_text(
             json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
         )
-        print(f"[ok] 原始分析資料已寫入 {DISCOVERED_JSON_PATH}")
+        print(f"[ok] Raw analysis data written to {DISCOVERED_JSON_PATH}")
 
         DOCS_PATH.write_text(build_markdown(data), encoding="utf-8")
-        print(f"[ok] 分析報告已寫入 {DOCS_PATH}")
+        print(f"[ok] Report written to {DOCS_PATH}")
 
-        print("\n分析完成，未填寫或送出任何表單。")
-        print("這是你自己開的 Edge 視窗，本程式不會呼叫任何關閉指令 - 請自行檢查畫面後手動關閉。")
+        print("\nAnalysis complete. No form was filled in or submitted.")
+        print("This is your own Edge window - this program never closes it. Inspect the "
+              "screen and close it yourself when done.")
         # Deliberately not calling br.close()/context.close(): this Browser
         # object was obtained via connect_over_cdp() on a real Edge window
         # we did not launch. Closing it here risks killing that whole Edge

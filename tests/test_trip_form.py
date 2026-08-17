@@ -103,10 +103,10 @@ def make_trip(**overrides):
         date="2026/08/12",
         start_time="09:00",
         end_time="17:30",
-        location="富邦金控",
-        reason="MongoDB 系統維護",
-        transport="捷運",
-        note="Q3 MongoDB 維護作業",
+        location="Client site A",
+        reason="Database maintenance",
+        transport="MRT",
+        note="quarterly maintenance",
     )
     defaults.update(overrides)
     return TripRequest(**defaults)
@@ -115,19 +115,19 @@ def make_trip(**overrides):
 def test_trip_request_holds_fields():
     trip = make_trip()
     assert trip.date == "2026/08/12"
-    assert trip.location == "富邦金控"
+    assert trip.location == "Client site A"
 
 
 def test_note_with_transport_appends_transport():
-    trip = make_trip(note="備註內容", transport="捷運")
+    trip = make_trip(note="note text", transport="MRT")
     combined = _note_with_transport(trip)
-    assert "備註內容" in combined
-    assert "交通方式：捷運" in combined
+    assert "note text" in combined
+    assert "交通方式：MRT" in combined
 
 
 def test_note_with_transport_handles_empty_transport():
-    trip = make_trip(note="備註內容", transport="")
-    assert _note_with_transport(trip) == "備註內容"
+    trip = make_trip(note="note text", transport="")
+    assert _note_with_transport(trip) == "note text"
 
 
 def test_get_filler_employee_code_reads_autofilled_field(monkeypatch):
@@ -144,10 +144,10 @@ def test_fill_form_writes_expected_fields(monkeypatch):
 
     trip_form.fill_form(page=None, trip=make_trip())
 
-    assert fake_frame.filled[f"#{FIELD_IDS['location']}"] == "富邦金控"
+    assert fake_frame.filled[f"#{FIELD_IDS['location']}"] == "Client site A"
     assert fake_frame.filled[f"#{FIELD_IDS['start_date']}"] == "2026/08/12"
     assert fake_frame.filled[f"#{FIELD_IDS['end_date']}"] == "2026/08/12"
-    assert "交通方式：捷運" in fake_frame.filled[f"#{FIELD_IDS['note']}"]
+    assert "交通方式：MRT" in fake_frame.filled[f"#{FIELD_IDS['note']}"]
 
 
 def test_check_required_fields_reports_missing(monkeypatch):
@@ -157,8 +157,8 @@ def test_check_required_fields_reports_missing(monkeypatch):
 
     missing = trip_form.check_required_fields(page=None)
 
-    assert "開始時間" in missing
-    assert "開始日期" not in missing
+    assert "start time" in missing
+    assert "start date" not in missing
 
 
 def test_submit_form_clicks_send_button(monkeypatch):
@@ -178,7 +178,7 @@ def test_submit_form_accepts_plain_confirm(monkeypatch):
     monkeypatch.setattr(trip_form, "find_trip_form_wrapper_frame", lambda page: fake_frame)
     dialogs = []
     fake_frame.on_click[trip_form.SEND_BUTTON_SELECTOR] = lambda: dialogs.append(
-        fake_page.fire_dialog("confirm", "確定要送出嗎？")
+        fake_page.fire_dialog("confirm", "Send this form?")
     )
 
     trip_form.submit_form(page=fake_page)  # should not raise
@@ -191,7 +191,7 @@ def test_submit_form_raises_on_unexpected_alert(monkeypatch):
     fake_page = FakePage()
     monkeypatch.setattr(trip_form, "find_trip_form_wrapper_frame", lambda page: fake_frame)
     fake_frame.on_click[trip_form.SEND_BUTTON_SELECTOR] = lambda: fake_page.fire_dialog(
-        "alert", "非預期錯誤"
+        "alert", "unexpected error"
     )
 
     with pytest.raises(UnexpectedDialogError):
@@ -212,13 +212,13 @@ def test_submit_form_raises_on_danger_keyword_confirm(monkeypatch):
 
 def test_add_traveler_success(monkeypatch):
     fake_frame = FakeFrame()
-    fake_frame.known_employees["E12345"] = "王小明"
+    fake_frame.known_employees["E12345"] = "Test Employee"
     fake_page = FakePage()
     monkeypatch.setattr(trip_form, "find_trip_form_frame", lambda page: fake_frame)
 
     name = trip_form.add_traveler(page=fake_page, employee_code="E12345")
 
-    assert name == "王小明"
+    assert name == "Test Employee"
     assert fake_frame.filled[DETAIL_PERSON_CODE_SELECTOR] == "E12345"
     assert DETAIL_SAVE_BUTTON_SELECTOR in fake_frame.clicked
 
@@ -292,7 +292,7 @@ def test_verify_submission_failed_when_autonumber_persists(monkeypatch):
     fake_frame = FakeFrame()
     fake_frame.filled[f"#{DOC_NUMBER_FIELD_ID}"] = "AutoNumber"
     monkeypatch.setattr(trip_form, "find_trip_form_frame", lambda page: fake_frame)
-    page = FakeVerifyPage(frame_texts=["出差登記表單還在畫面上"])
+    page = FakeVerifyPage(frame_texts=["the form is still on screen"])
 
     result, detail = trip_form.verify_submission(page, timeout_ms=3000)
 
@@ -301,14 +301,15 @@ def test_verify_submission_failed_when_autonumber_persists(monkeypatch):
 
 
 def test_verify_submission_does_not_call_failure_on_first_sight(monkeypatch):
-    """A postback still in flight leaves the old form on screen with 單號
-    unchanged; concluding FAILED immediately would misreport it."""
+    """A postback still in flight leaves the old form on screen with its
+    document number unchanged; concluding FAILED immediately would
+    misreport it."""
     monkeypatch.setattr(trip_form, "check_session", lambda page: SessionState.AUTHENTICATED)
     monkeypatch.setattr(trip_form, "FAILED_CONFIRM_SECONDS", 60)
     fake_frame = FakeFrame()
     fake_frame.filled[f"#{DOC_NUMBER_FIELD_ID}"] = "AutoNumber"
     monkeypatch.setattr(trip_form, "find_trip_form_frame", lambda page: fake_frame)
-    page = FakeVerifyPage(frame_texts=["出差登記表單還在畫面上"])
+    page = FakeVerifyPage(frame_texts=["the form is still on screen"])
 
     result, _ = trip_form.verify_submission(page, timeout_ms=600)
 
@@ -322,13 +323,13 @@ def test_verify_submission_unknown_when_session_expired_mid_postback(monkeypatch
     result, detail = trip_form.verify_submission(page, timeout_ms=100)
 
     assert result == SubmissionResult.UNKNOWN
-    assert "重送" in detail  # must warn against blindly retrying
+    assert "resend" in detail  # must warn against blindly retrying
 
 
 def test_verify_submission_unknown_on_timeout_with_no_signal(monkeypatch):
     monkeypatch.setattr(trip_form, "check_session", lambda page: SessionState.AUTHENTICATED)
     monkeypatch.setattr(trip_form, "find_trip_form_frame", lambda page: None)
-    page = FakeVerifyPage(frame_texts=["中間某個過渡畫面"])
+    page = FakeVerifyPage(frame_texts=["some intermediate screen"])
 
     result, detail = trip_form.verify_submission(page, timeout_ms=100)
 

@@ -47,9 +47,10 @@ POC_PROFILE_DIR = ROOT / ".poc-persistent-edge-profile"
 
 def main():
     POC_PROFILE_DIR.mkdir(exist_ok=True)
-    print(f"啟動真正的 Microsoft Edge（Playwright launch_persistent_context, channel=msedge）")
+    print("Launching the real Microsoft Edge "
+          "(Playwright launch_persistent_context, channel=msedge)")
     print(f"profile: {POC_PROFILE_DIR}")
-    print(f"目標: {EIP_URL}\n")
+    print(f"Target: {EIP_URL}\n")
 
     with sync_playwright() as pw:
         context = pw.chromium.launch_persistent_context(
@@ -61,22 +62,22 @@ def main():
 
         try:
             page.goto(EIP_URL, wait_until="domcontentloaded", timeout=20000)
-            print(f"[結果] goto() 成功，沒有拋出例外")
-            print(f"  最終 URL: {page.url}")
+            print("[result] goto() returned without raising")
+            print(f"  final URL: {page.url}")
             print(f"  Title: {page.title()}")
             if "電子簽核" in page.title() or page.url.rstrip("/").endswith("EFNET"):
-                print("  => 看起來已經是登入後的畫面（需要你親眼確認截圖）")
+                print("  => looks like the logged-in page (confirm from the screenshot)")
             page.screenshot(path=str(ROOT / "screenshots" / "poc_persistent_edge_result.png"))
-            print(f"  截圖已存到 screenshots/poc_persistent_edge_result.png")
+            print("  screenshot saved to screenshots/poc_persistent_edge_result.png")
         except Exception as e:  # noqa: BLE001 - this is exactly what we're testing for
-            print(f"[結果] goto() 失敗：{type(e).__name__}: {e}")
+            print(f"[result] goto() failed: {type(e).__name__}: {e}")
             try:
                 page.screenshot(path=str(ROOT / "screenshots" / "poc_persistent_edge_error.png"))
-                print(f"  錯誤畫面截圖已存到 screenshots/poc_persistent_edge_error.png")
+                print("  error screenshot saved to screenshots/poc_persistent_edge_error.png")
             except Exception:  # noqa: BLE001
                 pass
 
-        print("\n未點擊、未填寫、未送出任何內容。")
+        print("\nNothing was clicked, filled in, or submitted.")
         context.close()
 
 

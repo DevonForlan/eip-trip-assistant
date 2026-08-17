@@ -72,7 +72,7 @@ try:
     from dotenv import load_dotenv
     from requests_negotiate_sspi import HttpNegotiateAuth
 except ImportError as e:  # noqa: BLE001
-    print(f"[error] 缺少必要套件，請先執行 pip install -r requirements.txt（{e}）")
+    print(f"[error] Missing dependency - run: pip install -r requirements.txt ({e})")
     sys.exit(1)
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -173,7 +173,7 @@ def _get_query_param(url: str, name: str):
 
 
 def run_once(run_index: int) -> dict:
-    print(f"\n{'=' * 72}\nRun {run_index}/{RUNS}（全新 session）\n{'=' * 72}")
+    print(f"\n{'=' * 72}\nRun {run_index}/{RUNS} (fresh session)\n{'=' * 72}")
     r = {"run_index": run_index}
 
     session = requests.Session()
@@ -197,7 +197,8 @@ def run_once(run_index: int) -> dict:
     collect_url = _first_frame_src_matching(resp_efnet.text, resp_efnet.url, "CollectData.aspx")
     if collect_url is None:
         r["outcome"] = "COLLECTDATA_URL_NOT_FOUND"
-        print("  [error] 首頁 HTML 裡找不到指向 CollectData.aspx 的 frame src（首頁結構可能改了）。")
+        print("  [error] No frame src pointing at CollectData.aspx in the homepage HTML "
+              "- the homepage structure may have changed.")
         return r
     r["collectdata_url"] = _mask_url(collect_url)
 
@@ -222,7 +223,8 @@ def run_once(run_index: int) -> dict:
           f"sid={'Y' if r['collectdata']['sessionid_present'] else 'N'} "
           f"redirect={'Y' if r['collectdata']['redirected'] else 'N'}")
     if not r["collectdata"]["sessionid_present"]:
-        print(f"  [warn] 這一步之後還是沒有 {SESSION_COOKIE}，跟先前觀察不一致，繼續但要留意。")
+        print(f"  [warn] Still no {SESSION_COOKIE} after this step, which contradicts "
+              "earlier observations. Continuing, but treat the result with care.")
 
     # --- Step 3: EPIE001 (no Referer - already ruled out as necessary) ---
     try:
@@ -242,18 +244,20 @@ def run_once(run_index: int) -> dict:
         "is_full_version": epie_bytes >= EPIE001_FULL_MIN_BYTES,
     }
     print(f"  GET EPIE001.aspx?FormID=ESSF21    {resp_epie.status_code} {epie_bytes:>9,}B "
-          f"{'完整版' if r['epie001']['is_full_version'] else '精簡版'}")
+          f"{'full' if r['epie001']['is_full_version'] else 'slim'}")
 
     if not r["epie001"]["is_full_version"]:
         r["outcome"] = "EPIE001_SLIM"
-        print("  [stop] 這次沒拿到完整版 EPIE001，沒有 ESSF21 網址可解析，本回合結束。")
+        print("  [stop] No full EPIE001 this time, so there is no ESSF21 URL to parse. "
+              "Ending this run.")
         return r
 
     # --- Step 4: ESSF21, URL parsed fresh from THIS run's EPIE001 ---
     essf21_url = _first_frame_src_matching(resp_epie.text, resp_epie.url, "ESSF21.aspx")
     if essf21_url is None:
         r["outcome"] = "ESSF21_URL_NOT_FOUND"
-        print("  [error] 完整版 EPIE001 裡卻找不到 ESSF21 的 frame src（不該發生，需人工檢查）。")
+        print("  [error] A full EPIE001 with no ESSF21 frame src - that should not "
+              "happen; inspect by hand.")
         return r
 
     identifier = _get_query_param(essf21_url, "Identifier")
@@ -294,7 +298,7 @@ def run_once(run_index: int) -> dict:
         "markers": markers,
         "cookie_names": names_final,
         "sessionid_present": SESSION_COOKIE in names_final,
-        "referer_sent": "（當次 EPIE001 網址）",
+        "referer_sent": "(this run's EPIE001 URL)",
     }
 
     if body:
@@ -308,8 +312,8 @@ def run_once(run_index: int) -> dict:
     )
 
     print(f"  GET ESSF21.aspx                   {resp_essf21.status_code} {len(body):>9,}B "
-          f"CL={r['essf21']['content_length_header'] or '(無)'} "
-          f"ct={r['essf21']['content_type'] or '(無)'}")
+          f"CL={r['essf21']['content_length_header'] or '(none)'} "
+          f"ct={r['essf21']['content_type'] or '(none)'}")
     print(f"      redirect={'Y' if r['essf21']['redirected'] else 'N'}  "
           f"Identifier: len={r['identifier']['length']} sha256[:8]={r['identifier']['sha256_prefix8']}  "
           f"delay={elapsed_ms}ms")
@@ -319,13 +323,13 @@ def run_once(run_index: int) -> dict:
 
 
 def main():
-    print("ESSF21 純 HTTP 取得測試（前置已加入 CollectData.aspx 初始化）")
-    print(f"每回合全新 session，共 {RUNS} 回合。全程只有 GET，不填表/不儲存/不傳送。")
-    print(f"ESSF21 成功門檻：>= {ESSF21_SUCCESS_MIN_BYTES:,} bytes"
-          f"（瀏覽器實測 144,494 bytes；已知失敗態是 0 bytes）")
-    print(f"送出的瀏覽器類標頭：{sorted(BROWSER_HEADERS.keys())}"
-          "（Accept-Language 是 ESSF21 的必要條件，見模組說明）")
-    print(f"輸出目錄（已 gitignore）= {OUT_DIR}")
+    print("Fetching ESSF21 over plain HTTP, with CollectData.aspx initialization first")
+    print(f"{RUNS} runs, each on a fresh session. GET only - nothing is filled, saved or sent.")
+    print(f"Success threshold: >= {ESSF21_SUCCESS_MIN_BYTES:,} bytes "
+          "(the browser measured 144,494; the known failure mode is 0)")
+    print(f"Browser-like headers sent: {sorted(BROWSER_HEADERS.keys())} "
+          "(Accept-Language is the one ESSF21 actually requires - see module docstring)")
+    print(f"Output directory (gitignored) = {OUT_DIR}")
 
     results = [run_once(i) for i in range(1, RUNS + 1)]
 
@@ -334,7 +338,7 @@ def main():
         json.dumps(results, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
     )
 
-    print(f"\n{'=' * 72}\n總結\n{'=' * 72}")
+    print(f"\n{'=' * 72}\nSummary\n{'=' * 72}")
     print(f"{'Run':4s} {'Outcome':18s} {'EPIE001':>10s} {'ESSF21':>10s} {'CL':>8s} "
           f"{'024':4s} {'VS':4s} {'Delay':>8s}")
     for r in results:
@@ -354,24 +358,26 @@ def main():
 
     if n_full == RUNS:
         verdict = "PASS"
-        msg = (f"{RUNS}/{RUNS} 全部取得完整 ESSF21 表單 - "
-               "Phase 2 HTTP FORM ACCESS = PASS。純 HTTP 已能穩定讀到真正的表單內容。")
+        msg = (f"{RUNS}/{RUNS} runs retrieved the full ESSF21 form - "
+               "HTTP form access PASSES; plain HTTP can now read the real form reliably.")
     elif n_empty == RUNS:
         verdict = "ALL_EMPTY_200"
-        msg = (f"{RUNS}/{RUNS} 都是 200 + 0 bytes - CollectData 初始化解決了 EPIE001，"
-               "但沒有解決 ESSF21。依指示停止，不 POST，下一步改為比對 header/state 差異。")
+        msg = (f"{RUNS}/{RUNS} runs returned 200 with 0 bytes - CollectData initialization "
+               "fixed EPIE001 but not ESSF21. Stopping without POSTing; the next step is "
+               "a header/state comparison.")
     else:
         verdict = "INCONCLUSIVE"
-        msg = (f"結果不一致（完整 {n_full} / 空 {n_empty} / 其他 {RUNS - n_full - n_empty}）- "
-               "標記 INCONCLUSIVE，依指示不重試到成功。")
+        msg = (f"Mixed results (full {n_full} / empty {n_empty} / other "
+               f"{RUNS - n_full - n_empty}) - marking INCONCLUSIVE rather than retrying "
+               "until something succeeds.")
 
-    print(f"\n判定：{verdict}\n理由：{msg}")
+    print(f"\nVerdict: {verdict}\nReason : {msg}")
     (OUT_DIR / "verdict.json").write_text(
         json.dumps({"verdict": verdict, "explanation": msg, "outcomes": outcomes},
                    ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
-    print(f"\n結果已存到 {OUT_DIR / 'results.json'} / {OUT_DIR / 'verdict.json'}")
+    print(f"\nResults written to {OUT_DIR / 'results.json'} and {OUT_DIR / 'verdict.json'}")
 
 
 if __name__ == "__main__":

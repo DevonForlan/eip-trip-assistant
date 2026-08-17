@@ -7,7 +7,7 @@ Collects the trip details interactively, shows a confirmation summary,
 and only proceeds to the browser automation step if the user types `y`.
 After the form is filled in the live EIP page, it reads the values back
 from the browser and asks for a SECOND, final `y` confirmation before
-clicking the real "傳送" (Send) button - that click is a genuine,
+clicking the real Send button - that click is a genuine,
 irreversible submission into the approval workflow.
 
 2026-08 architecture review: the flow below is driven by an explicit
@@ -59,21 +59,21 @@ from trip_form import TravelerValidationError, TripRequest  # noqa: E402
 
 
 def prompt(label: str) -> str:
-    value = input(f"{label}：").strip()
+    value = input(f"{label}: ").strip()
     while not value:
-        value = input(f"{label}（必填，請重新輸入）：").strip()
+        value = input(f"{label} (required, please re-enter): ").strip()
     return value
 
 
 def collect_trip_request() -> TripRequest:
-    print("請輸入出差申請資訊：\n")
-    date = prompt("出差日期")
-    start_time = prompt("開始時間")
-    end_time = prompt("結束時間")
-    location = prompt("出差地點")
-    reason = prompt("出差事由")
-    transport = prompt("交通方式")
-    note = input("備註：").strip()  # optional
+    print("Enter the trip details:\n")
+    date = prompt("Trip date")
+    start_time = prompt("Start time")
+    end_time = prompt("End time")
+    location = prompt("Location")
+    reason = prompt("Reason")
+    transport = prompt("Transport")
+    note = input("Note: ").strip()  # optional
     return TripRequest(
         date=date,
         start_time=start_time,
@@ -87,19 +87,19 @@ def collect_trip_request() -> TripRequest:
 
 def show_confirmation(trip: TripRequest) -> bool:
     print("\n====================")
-    print("出差申請確認")
+    print("Trip application - confirm")
     print("====================")
-    print(f"日期：{trip.date}")
-    print(f"時間：{trip.start_time} - {trip.end_time}")
-    print(f"地點：{trip.location}")
-    print(f"事由：{trip.reason}")
-    print(f"交通方式：{trip.transport}")
-    print(f"備註：{trip.note}")
+    print(f"Date     : {trip.date}")
+    print(f"Time     : {trip.start_time} - {trip.end_time}")
+    print(f"Location : {trip.location}")
+    print(f"Reason   : {trip.reason}")
+    print(f"Transport: {trip.transport}")
+    print(f"Note     : {trip.note}")
     print()
-    print("（提示：EIP 的出差登記表單沒有獨立的交通方式欄位，"
-          "會併入「備註」欄位一起寫入）")
+    print("(Note: this EIP form has no separate transport field, so transport is\n"
+          " appended to the note field.)")
     print()
-    answer = input("確認送出？ [y/N] ").strip().lower()
+    answer = input("Proceed? [y/N] ").strip().lower()
     return answer == "y"
 
 
@@ -108,19 +108,20 @@ def final_submit_confirmation(page, traveler_name: str) -> bool:
     from trip_form import FIELD_IDS
 
     print("\n==========================")
-    print("表單已填入，讀回實際畫面內容：")
+    print("Form filled. Values read back from the live page:")
     print("==========================")
-    print(f"開始日期/時間：{frame.input_value('#' + FIELD_IDS['start_date'])} "
+    print(f"Start date/time: {frame.input_value('#' + FIELD_IDS['start_date'])} "
           f"{frame.input_value('#' + FIELD_IDS['start_time'])}")
-    print(f"結束日期/時間：{frame.input_value('#' + FIELD_IDS['end_date'])} "
+    print(f"End date/time  : {frame.input_value('#' + FIELD_IDS['end_date'])} "
           f"{frame.input_value('#' + FIELD_IDS['end_time'])}")
-    print(f"出差地點：{frame.input_value('#' + FIELD_IDS['location'])}")
-    print(f"出差原因：{frame.input_value('#' + FIELD_IDS['reason'])}")
-    print(f"備註：{frame.input_value('#' + FIELD_IDS['note'])}")
-    print(f"出差人：{traveler_name}")
+    print(f"Location       : {frame.input_value('#' + FIELD_IDS['location'])}")
+    print(f"Reason         : {frame.input_value('#' + FIELD_IDS['reason'])}")
+    print(f"Note           : {frame.input_value('#' + FIELD_IDS['note'])}")
+    print(f"Traveler       : {traveler_name}")
     print()
-    print("接下來會點擊 EIP 上真正的「傳送」按鈕，這是無法復原的正式送出動作。")
-    answer = input("最終確認：真的要送出嗎？ [y/N] ").strip().lower()
+    print("Next step clicks the real Send button in EIP. This files the application\n"
+          "into the approval workflow and cannot be undone.")
+    answer = input("Final confirmation - really send? [y/N] ").strip().lower()
     return answer == "y"
 
 
@@ -140,8 +141,8 @@ def _require_authenticated(page, flow: TripFlow, step_reason: str) -> None:
         flow.transition(TripState.SESSION_EXPIRED, step_reason)  # raises
     elif state == SessionState.UNKNOWN:
         raise RuntimeError(
-            f"無法確認登入狀態是否還有效（於「{step_reason}」），"
-            "為安全起見視同無法繼續，請重新登入後再試一次。"
+            f"Could not confirm the session is still valid (at: {step_reason}). "
+            "Treating that as unsafe to continue - log in again and retry."
         )
 
 
@@ -150,11 +151,12 @@ def main():
     confirmed = show_confirmation(trip)
 
     if not confirmed:
-        print("\n已取消，未執行任何送出動作。")
+        print("\nCancelled. Nothing was sent.")
         return
 
-    print(f"\n正在連線到已啟動並登入的 Edge（CDP: {browser.CDP_URL}）...")
-    print("（EIP 需要 Windows 整合驗證，所以是連到你手動登入的 Edge，而非開新的瀏覽器）")
+    print(f"\nConnecting to the running, logged-in Edge (CDP: {browser.CDP_URL})...")
+    print("(EIP needs Windows Integrated Authentication, so this attaches to that\n"
+          " browser rather than launching a fresh one.)")
 
     flow = TripFlow()
 
@@ -173,71 +175,78 @@ def main():
             # perfectly good session.
             session_state = wait_until_authenticated(page)
             if session_state != SessionState.AUTHENTICATED:
-                print(f"\n[error] 目前 EIP 分頁的登入狀態是 {session_state.value}，不是已登入，已停止。")
+                print(f"\n[error] The EIP tab reports session state {session_state.value}, "
+                      "not authenticated. Stopping.")
                 if session_state == SessionState.EXPIRED:
-                    print("請重新登入 EIP 後再重新執行本程式。")
+                    print("Log back into EIP, then run this program again.")
                 return
-            flow.transition(TripState.AUTHENTICATED, "確認已登入")
+            flow.transition(TripState.AUTHENTICATED, "confirmed logged in")
 
             eip_client.open_trip_form(page)
-            _require_authenticated(page, flow, "開啟出差登記表單後")
-            flow.transition(TripState.FORM_OPEN, "開啟出差登記表單")
+            _require_authenticated(page, flow, "after opening the trip form")
+            flow.transition(TripState.FORM_OPEN, "opened the trip form")
 
             trip_form.fill_form(page, trip)
             missing = trip_form.check_required_fields(page)
             if missing:
-                flow.transition(TripState.FAILED, f"必填欄位缺漏：{', '.join(missing)}")
-                print(f"\n[error] 必填欄位缺漏：{', '.join(missing)}，已停止，未送出。")
+                flow.transition(TripState.FAILED, f"missing required fields: {', '.join(missing)}")
+                print(f"\n[error] Missing required fields: {', '.join(missing)}. "
+                      "Stopped without sending.")
                 return
-            flow.transition(TripState.FORM_FILLED, "填入表單資料")
+            flow.transition(TripState.FORM_FILLED, "filled the form")
 
-            print("\n檢查「表單追蹤處理」是否已經有相同日期/時間的單據，避免重複送出...")
+            print("\nChecking form tracking for an existing document with the same "
+                  "date/time, to avoid a duplicate submission...")
             # Checks the browser view AND an independent HTTP query - the
             # browser's list has been caught serving cached results, and a
             # missed duplicate means filing the same trip twice.
             existing = duplicate_check.find_existing_submission_anywhere(page, trip)
             if existing:
-                flow.transition(TripState.FAILED, "偵測到可能重複的既有單據")
-                print("\n[error] 在「原稿資料匣」找到疑似重複的單據，已停止，未送出：")
+                flow.transition(TripState.FAILED, "possible duplicate document found")
+                print("\n[error] Found what looks like a duplicate in the drafts folder. "
+                      "Stopped without sending:")
                 for row in existing:
-                    print(f"  - 單號 {row['docNumber']}：{row['text']}")
-                print("請先確認這些單據的狀態，再決定是否要用其他日期/時間重新送出。")
+                    print(f"  - {row['docNumber']}: {row['text']}")
+                print("Check those documents first, then decide whether to resubmit "
+                      "with a different date/time.")
                 return
 
-            # Checking 表單追蹤處理 switches the sidebar and backgrounds
-            # the 出差登記 tab (its content becomes hidden, not just
+            # Checking form tracking switches the sidebar and backgrounds
+            # the trip-form tab (its content becomes hidden, not just
             # unfocused) - bring it back before touching the form again.
             eip_client.reactivate_trip_form_tab(page)
 
             employee_code = trip_form.get_filler_employee_code(page)
             traveler_name = trip_form.add_traveler(page, employee_code)
-            _require_authenticated(page, flow, "儲存出差人明細後")
-            flow.transition(TripState.TRAVELER_SAVED, f"已加入出差人：{traveler_name}")
+            _require_authenticated(page, flow, "after saving the traveler detail")
+            flow.transition(TripState.TRAVELER_SAVED, f"traveler added: {traveler_name}")
 
             if not final_submit_confirmation(page, traveler_name):
-                print("\n已取消最終送出，表單內容仍留在畫面上，未呼叫送出按鈕。")
+                print("\nFinal send cancelled. The form is left on screen; the Send "
+                      "button was never clicked.")
                 return
-            flow.transition(TripState.READY_TO_SEND, "使用者最終確認送出")
+            flow.transition(TripState.READY_TO_SEND, "user gave final confirmation")
 
-            flow.transition(TripState.SENDING, "點擊傳送按鈕")
+            flow.transition(TripState.SENDING, "clicking the Send button")
             trip_form.submit_form(page)
 
             result, detail = trip_form.verify_submission(page)
             if result == trip_form.SubmissionResult.SUCCESS:
                 flow.transition(TripState.SENT, detail)
-                print(f"\n已送出出差登記申請成功。{detail}")
+                print(f"\nTrip application sent successfully. {detail}")
             else:
                 flow.transition(TripState.FAILED, detail)
-                print(f"\n[error] 送出結果：{result.value}。{detail}")
-                print("切勿直接重新執行送出 - 請先用「表單追蹤處理」確認實際狀態。")
+                print(f"\n[error] Send result: {result.value}. {detail}")
+                print("Do not simply run the send again - confirm the real state via "
+                      "form tracking first.")
         except SessionExpiredError as e:
             print(f"\n[error] {e}")
         except (TravelerValidationError, UnexpectedDialogError) as e:
             print(f"\n[error] {e}")
         except Exception as e:  # noqa: BLE001 - last resort, still report state
-            print(f"\n[error] 執行過程發生未預期錯誤，已停止，未送出：{e}")
+            print(f"\n[error] Unexpected error; stopped without sending: {e}")
         finally:
-            print(f"\n本次流程狀態記錄：{flow.history_summary() or '(尚未進入任何狀態)'}")
+            print(f"\nFlow history: {flow.history_summary() or '(no state entered)'}")
         # Deliberately not closing br/context here - it's your real,
         # manually-logged-in Edge window, not one this script launched.
 

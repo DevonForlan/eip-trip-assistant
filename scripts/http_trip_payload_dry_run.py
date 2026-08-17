@@ -42,10 +42,10 @@ class SampleTrip:
     date: str = "2026/01/01"
     start_time: str = "09:00"
     end_time: str = "18:30"
-    location: str = "測試地點測試地點"
-    reason: str = "測試事由"
-    transport: str = "測試交通"
-    note: str = "測試備註"
+    location: str = "Sample location"
+    reason: str = "Sample reason"
+    transport: str = "Sample transport"
+    note: str = "Sample note"
 
 
 def mask_url(url: str) -> str:
@@ -55,7 +55,7 @@ def mask_url(url: str) -> str:
     if not pairs:
         return base
     parts = [
-        f"{k}=<已遮罩,len={len(v)}>" if k.lower() in SENSITIVE_QUERY_PARAMS else f"{k}={v}"
+        f"{k}=<masked,len={len(v)}>" if k.lower() in SENSITIVE_QUERY_PARAMS else f"{k}={v}"
         for k, v in pairs
     ]
     return f"{base}?{'&'.join(parts)}"
@@ -81,42 +81,42 @@ def raw_counts(html: str) -> dict:
 
 
 def main():
-    print("=== ESSF21 Payload Dry Run（只 GET，不 POST）===\n")
+    print("=== ESSF21 payload dry run (GET only, never POST) ===\n")
 
     client = HttpEipClient()  # read_only=True by default: POST is blocked in code
     try:
-        print("步驟 1-4：authenticate -> initialize_efnet -> open_trip_wrapper -> open_trip_form")
+        print("Steps 1-4: authenticate -> initialize_efnet -> open_trip_wrapper -> open_trip_form")
         page = client.prepare()
     except HttpEipError as e:
         print(f"\n[error] {e}")
         return 1
 
-    print(f"  ASP.NET_SessionId 是否取得：{'是' if client.has_session_cookie else '否'}")
-    print(f"  EPIE001 大小：{len(client.wrapper_html.encode('utf-8', errors='replace')):,} bytes")
-    print(f"  ESSF21 網址：{mask_url(page.url)}")
-    print(f"  ESSF21 大小：{page.byte_length:,} bytes")
+    print(f"  ASP.NET_SessionId obtained: {client.has_session_cookie}")
+    print(f"  EPIE001 size: {len(client.wrapper_html.encode('utf-8', errors='replace')):,} bytes")
+    print(f"  ESSF21 URL  : {mask_url(page.url)}")
+    print(f"  ESSF21 size : {page.byte_length:,} bytes")
 
     # --- parse ------------------------------------------------------
-    print("\n=== Parser 結果 ===")
+    print("\n=== Parser results ===")
     form = webforms_state.parse_form(page.html)
     counts = form.counts()
     print(f"  form: name={form.name!r} method={form.method!r}")
-    print(f"  form action（已遮罩）：{mask_url(urljoin(page.url, form.action))}")
+    print(f"  form action (masked): {mask_url(urljoin(page.url, form.action))}")
     for k in ("total_controls", "hidden", "text", "textarea", "checkbox", "radio",
               "submit", "image", "select", "other", "disabled", "unnamed",
               "successful_controls"):
         print(f"    {k:22s} {counts[k]}")
 
-    # --- consistency check (item 七) --------------------------------
-    print("\n=== 一致性檢查（parser vs 原始 HTML regex）===")
+    # --- consistency check -------------------------------------------
+    print("\n=== Consistency check (parser vs raw-HTML regex) ===")
     raw = raw_counts(page.html)
     parsed_inputs = counts["total_controls"] - counts["textarea"] - counts["select"]
     checks = [
-        ("input 總數", parsed_inputs, raw["input"]),
-        ("textarea 總數", counts["textarea"], raw["textarea"]),
-        ("select 總數", counts["select"], raw["select"]),
-        ("hidden 欄位", counts["hidden"], raw["by_type"].get("hidden", 0)),
-        ("text 欄位", counts["text"], raw["by_type"].get("text", 0)),
+        ("input total", parsed_inputs, raw["input"]),
+        ("textarea total", counts["textarea"], raw["textarea"]),
+        ("select total", counts["select"], raw["select"]),
+        ("hidden fields", counts["hidden"], raw["by_type"].get("hidden", 0)),
+        ("text fields", counts["text"], raw["by_type"].get("text", 0)),
         ("checkbox", counts["checkbox"], raw["by_type"].get("checkbox", 0)),
         ("radio", counts["radio"], raw["by_type"].get("radio", 0)),
         ("submit", counts["submit"], raw["by_type"].get("submit", 0)),
@@ -126,32 +126,33 @@ def main():
     for label, parsed_n, raw_n in checks:
         ok = parsed_n == raw_n
         all_ok = all_ok and ok
-        print(f"  {'OK  ' if ok else 'FAIL'} {label:14s} parser={parsed_n:<5d} 原始HTML={raw_n}")
-    print(f"  （原始 HTML 的 <script> 內含 input 數：{raw['input_in_script']}，"
-          "parser 會略過 script 內容）")
+        print(f"  {'OK  ' if ok else 'FAIL'} {label:14s} parser={parsed_n:<5d} rawHTML={raw_n}")
+    print(f"  (inputs inside <script> in the raw HTML: {raw['input_in_script']}; "
+          "the parser skips script content)")
 
     if not all_ok:
-        print("\n[stop] parser 與原始 HTML 不一致 - 依指示先修 parser，不進行任何 POST 相關工作。")
+        print("\n[stop] Parser disagrees with the raw HTML - fix the parser first; "
+              "do no POST-related work until it matches.")
         return 1
-    print("  -> 全部一致，沒有漏掉任何控制項。")
+    print("  -> All counts agree; no control was dropped.")
 
     # --- ASP.NET state ---------------------------------------------
-    print("\n=== ASP.NET state 欄位（只顯示存在與長度，不顯示內容）===")
+    print("\n=== ASP.NET state fields (presence and length only, never values) ===")
     for s in form.state_field_summary():
         if s["present"]:
             print(f"  {s['name']:24s} preserved=True   length={s['length']:,}")
         else:
-            print(f"  {s['name']:24s} 不存在（這個頁面沒有這個欄位）")
+            print(f"  {s['name']:24s} absent (this page has no such field)")
 
     # --- checkbox / radio -------------------------------------------
-    print("\n=== checkbox / radio 狀態（決定是否會被送出）===")
+    print("\n=== checkbox / radio state (decides what gets submitted) ===")
     for c in form.controls:
         if c.effective_type in ("checkbox", "radio"):
             print(f"  {c.effective_type:8s} name={c.name:26s} "
-                  f"checked={str(c.checked):5s} -> {'會送出' if c.checked else '不會送出'}")
+                  f"checked={str(c.checked):5s} -> {'submitted' if c.checked else 'not submitted'}")
 
     # --- build payload ----------------------------------------------
-    print("\n=== 建立 payload（僅記憶體，不送出）===")
+    print("\n=== Building the payload (in memory only, never sent) ===")
     trip = SampleTrip()
     try:
         payload = http_trip_form.build_trip_payload(
@@ -161,31 +162,31 @@ def main():
         print(f"\n[error] {e}")
         return 1
 
-    print(f"  method={payload.method}  欄位總數={len(payload.fields)}  "
-          f"不重複 name={len(set(payload.field_names()))}")
-    print(f"  action（已遮罩）：{mask_url(payload.action_url)}")
+    print(f"  method={payload.method}  fields={len(payload.fields)}  "
+          f"distinct names={len(set(payload.field_names()))}")
+    print(f"  action (masked): {mask_url(payload.action_url)}")
 
-    print("\n--- 修改的欄位 diff（只顯示長度）---")
+    print("\n--- Changed fields (lengths only) ---")
     for ch in payload.changes:
         print(f"  {ch.post_name}:")
         print(f"      logical={ch.logical}  tag=<{ch.tag}>  hidden={ch.is_hidden}")
         print(f"      old_present={ch.old_present}  old_length={ch.old_length}  "
               f"new_length={ch.new_length}")
 
-    print("\n--- 保留的 state 欄位 ---")
+    print("\n--- Preserved state fields ---")
     for name in webforms_state.OPAQUE_STATE_FIELDS:
         ln = payload.value_length(name)
         if ln is None:
-            print(f"  {name:24s} 不在送出清單")
+            print(f"  {name:24s} not in the submit list")
         else:
             print(f"  {name:24s} preserved=True  length={ln:,}")
 
-    print("\n--- payload 中未被修改的欄位（只列名稱數量）---")
+    print("\n--- Untouched fields in the payload (count only) ---")
     changed = {ch.post_name for ch in payload.changes}
     untouched = [n for n in payload.field_names() if n not in changed]
-    print(f"  共 {len(untouched)} 個原樣保留（其中 hidden {counts['hidden']} 個全部保留）")
+    print(f"  {len(untouched)} carried through unchanged (including all {counts['hidden']} hidden fields)")
 
-    print("\n=== 完成：沒有送出任何請求（本腳本只做 GET）===")
+    print("\n=== Done. No request was submitted; this script only performs GETs. ===")
     return 0
 
 

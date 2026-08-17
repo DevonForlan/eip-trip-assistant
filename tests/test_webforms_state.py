@@ -28,13 +28,13 @@ def test_parses_form_attributes_and_keeps_every_hidden_field():
 
 
 def test_disabled_and_button_controls_are_not_submitted():
-    """ESSF21 renders 12 disabled inputs (including the 儲存 button) and
+    """ESSF21 renders 12 disabled inputs (including the save button) and
     32 submit/image buttons - none may end up in a payload."""
     form = parse_form(
         "<form>"
         '<input type="text" name="ok" value="1" />'
         '<input type="text" name="off" value="2" disabled="disabled" />'
-        '<input type="submit" name="btnSave" value="儲存" />'
+        '<input type="submit" name="btnSave" value="Save" />'
         '<input type="image" name="btnImg" />'
         '<input type="reset" name="btnReset" />'
         '<input type="button" name="btnPlain" />'
@@ -71,13 +71,13 @@ def test_radio_group_submits_only_the_checked_option():
 
 
 def test_textarea_submits_its_text_content_not_a_value_attribute():
-    """出差地點/事由/備註 are textareas - reading a value attribute here
+    """Location / reason / note are textareas - reading a value attribute here
     would silently submit empty strings."""
-    form = parse_form('<form><textarea name="note$txt" id="note_txt">已填內容</textarea></form>')
+    form = parse_form('<form><textarea name="note$txt" id="note_txt">existing text</textarea></form>')
     ctrl = form.by_id("note_txt")
     assert ctrl.tag == "textarea"
-    assert ctrl.value == "已填內容"
-    assert form.successful_controls() == [("note$txt", "已填內容")]
+    assert ctrl.value == "existing text"
+    assert form.successful_controls() == [("note$txt", "existing text")]
 
 
 def test_select_submits_selected_option_and_falls_back_to_first():
@@ -92,8 +92,8 @@ def test_select_submits_selected_option_and_falls_back_to_first():
 
 
 def test_option_without_value_submits_its_label():
-    form = parse_form('<form><select name="s"><option selected>標籤</option></select></form>')
-    assert form.successful_controls() == [("s", "標籤")]
+    form = parse_form('<form><select name="s"><option selected>Label</option></select></form>')
+    assert form.successful_controls() == [("s", "Label")]
 
 
 def test_controls_written_inside_script_are_ignored():

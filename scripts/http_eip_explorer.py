@@ -49,9 +49,9 @@ try:
     from requests_negotiate_sspi import HttpNegotiateAuth
 except ImportError as e:  # noqa: BLE001
     print(
-        "[error] 缺少必要套件，請先執行："
+        "[error] Missing dependency. Run:"
         "\n  pip install -r requirements.txt"
-        f"\n（原始錯誤：{e}）"
+        f"\n(original error: {e})"
     )
     sys.exit(1)
 
@@ -202,7 +202,7 @@ def _get_summary(session, url: str, save_as: str | None = None) -> dict:
 
 
 def step0_anonymous_probe() -> dict:
-    print("=== Step 0：匿名 GET，觀察伺服器提供的驗證機制（WWW-Authenticate） ===")
+    print("=== Step 0: anonymous GET, to see which auth schemes the server offers ===")
     try:
         resp = requests.get(EIP_URL, timeout=TIMEOUT_SECONDS, allow_redirects=True)
     except requests.RequestException as e:
@@ -215,26 +215,27 @@ def step0_anonymous_probe() -> dict:
         "final_url": resp.url,
         "auth_schemes_offered": schemes,
     }
-    print(f"  狀態碼：{resp.status_code}")
-    print(f"  伺服器提供的驗證機制（僅方案名稱，非完整標頭值）：{schemes or '（無 WWW-Authenticate 標頭）'}")
+    print(f"  status: {resp.status_code}")
+    print(f"  auth schemes offered (scheme names only, never the raw header): "
+          f"{schemes or '(no WWW-Authenticate header)'}")
     return result
 
 
 def step1_authenticated_homepage(session) -> dict:
-    print("\n=== Step 1：使用 Windows SSPI 驗證 GET 首頁 ===")
+    print("\n=== Step 1: GET the homepage, authenticated via Windows SSPI ===")
     result = _get_summary(session, EIP_URL, save_as="step1_homepage.html")
     parser = result.pop("_parser", None)
     if "error" in result:
         print(f"  [error] {result['error']}")
         return result
 
-    print(f"  狀態碼：{result['status']}")
-    print(f"  最終網址：{result['final_url']}")
+    print(f"  status    : {result['status']}")
+    print(f"  final URL : {result['final_url']}")
     print(f"  Content-Type：{result['content_type']}")
-    print(f"  頁面標題：{result['title']!r}")
-    print(f"  回應長度：{result['content_length']} bytes")
-    print(f"  重新導向鏈：{result['redirect_chain'] or '（無）'}")
-    print(f"  已將標頭（機敏欄位已遮罩）與原始 HTML 存到 {OUT_DIR}")
+    print(f"  title     : {result['title']!r}")
+    print(f"  length    : {result['content_length']} bytes")
+    print(f"  redirects : {result['redirect_chain'] or '(none)'}")
+    print(f"  headers (sensitive ones masked) and raw HTML written to {OUT_DIR}")
 
     result["frame_count"] = len(parser.frames) if parser else 0
     result["_final_url_for_crawl"] = result["final_url"]
@@ -242,7 +243,7 @@ def step1_authenticated_homepage(session) -> dict:
 
 
 def step2_crawl_frames(session, start_url: str, max_depth: int = 4, max_nodes: int = 60) -> list:
-    print("\n=== Step 2：從首頁遞迴解析 frame/iframe 結構 ===")
+    print("\n=== Step 2: walk the frame/iframe tree from the homepage ===")
     visited = set()
     nodes = []
     queue = [(start_url, 0, "(root)")]
@@ -270,13 +271,14 @@ def step2_crawl_frames(session, start_url: str, max_depth: int = 4, max_nodes: i
                 if not src or src.startswith("about:"):
                     continue
                 child_url = urljoin(resp.url, src)
-                queue.append((child_url, depth + 1, fr.get("name") or fr.get("id") or "(未命名)"))
+                queue.append((child_url, depth + 1, fr.get("name") or fr.get("id") or "(unnamed)"))
         except requests.RequestException as e:
             node["error"] = str(e)
         nodes.append(node)
 
     if truncated:
-        print(f"  [note] 已達節點上限 {max_nodes}，可能還有未爬到的 frame（不代表不存在，只是這次沒爬完）。")
+        print(f"  [note] Hit the {max_nodes}-node cap; some frames may be uncrawled. "
+              "That means 'not visited', not 'not present'.")
 
     for n in nodes:
         indent = "  " * (n["depth"] + 1)
@@ -293,29 +295,30 @@ def step2_crawl_frames(session, start_url: str, max_depth: int = 4, max_nodes: i
         "node_count": len(nodes),
         "truncated": truncated,
     }
-    print(f"\n  是否找到 platform.aspx：{flags['found_platform_aspx']}")
-    print(f"  是否找到 EPIE001.aspx：{flags['found_epie001_aspx']}")
-    print(f"  是否找到 ESSF21.aspx：{flags['found_essf21_aspx']}"
-          "（預期為 False - 這個 frame 是使用者點擊「出差登記」後由 JS 動態注入的，"
-          "純 HTTP 爬蟲不會執行 JS，看不到純首頁 HTML 以外動態產生的內容）")
+    print(f"\n  found platform.aspx: {flags['found_platform_aspx']}")
+    print(f"  found EPIE001.aspx : {flags['found_epie001_aspx']}")
+    print(f"  found ESSF21.aspx  : {flags['found_essf21_aspx']}"
+          " (expected False - that frame is injected by JS after the user clicks the\n"
+          "  trip-registration shortcut, and a plain HTTP crawl runs no JS)")
 
     return nodes, flags
 
 
 def step3a_bare_get(session) -> dict:
-    print("\n=== Step 3a：直接 GET 使用者指定的裸路徑（預期缺少必要參數） ===")
+    print("\n=== Step 3a: GET the bare ESSF21 path (expected to lack required params) ===")
     bare_url = f"http://{EIP_HOST}/HRMESS/src/ESS/ESSF21/ESSF21.aspx"
     result = _get_summary(session, bare_url, save_as="step3a_bare.html")
     result.pop("_parser", None)
     if "error" in result:
         print(f"  [error] {result['error']}")
     else:
-        print(f"  狀態碼：{result['status']}，最終網址：{result['final_url']}，標題：{result['title']!r}")
+        print(f"  status: {result['status']}, final URL: {result['final_url']}, "
+              f"title: {result['title']!r}")
     return result
 
 
 def step3b_derive_from_wrapper(session) -> tuple:
-    print("\n=== Step 3b：從已知穩定的 EPIE001.aspx 進入點嘗試推導 ESSF21.aspx 網址 ===")
+    print("\n=== Step 3b: derive the ESSF21 URL from the stable EPIE001.aspx entry point ===")
     wrapper_url = f"http://{EIP_HOST}/EFNET/src/EPI/EPIE001/EPIE001.aspx?FormID=ESSF21"
     result = _get_summary(session, wrapper_url, save_as="step3b_epie001.html")
     parser = result.pop("_parser", None)
@@ -324,7 +327,8 @@ def step3b_derive_from_wrapper(session) -> tuple:
         print(f"  [error] {result['error']}")
         return result, None
 
-    print(f"  狀態碼：{result['status']}，最終網址：{result['final_url']}，標題：{result['title']!r}")
+    print(f"  status: {result['status']}, final URL: {result['final_url']}, "
+          f"title: {result['title']!r}")
 
     derived_url = None
     if parser:
@@ -334,22 +338,24 @@ def step3b_derive_from_wrapper(session) -> tuple:
         }
         result["product_hidden_field_lengths"] = product_fields
         result["found_essf21_frame_directly"] = bool(essf21_frames)
-        print(f"  ProductUrl/ProductAction/ProductIdentifier 等隱藏欄位（僅長度，非內容）：{product_fields or '（無）'}")
+        print(f"  Product* hidden fields (lengths only, never values): {product_fields or '(none)'}")
         if essf21_frames:
             derived_url = urljoin(result["final_url"], essf21_frames[0]["src"])
-            result["derived_essf21_url_source"] = "在 EPIE001.aspx 回應中直接找到 <frame src> 指向 ESSF21.aspx"
-            print("  在 EPIE001.aspx 的回應 HTML 中直接找到指向 ESSF21.aspx 的 frame - 網址已從實際回應推導，非硬編。")
+            result["derived_essf21_url_source"] = "found a <frame src> pointing at ESSF21.aspx in the EPIE001 response"
+            print("  Found a frame in the EPIE001 response pointing at ESSF21.aspx - the "
+                  "URL is derived from the real response, not hardcoded.")
         else:
-            print("  EPIE001.aspx 的回應 HTML 中沒有直接找到指向 ESSF21.aspx 的 frame/iframe。")
-            print("  （這代表 framePlus 很可能是由這個頁面內嵌的 JavaScript 在瀏覽器端動態組出來的，"
-                  "純 HTTP GET 無法執行 JS，這一步到此無法再往下推導 - 不猜測網址。）")
+            print("  No frame/iframe pointing at ESSF21.aspx in the EPIE001 response.")
+            print("  (So framePlus is most likely assembled by this page's own JavaScript\n"
+                  "   in the browser. A plain GET runs no JS, so the chain stops here -\n"
+                  "   the URL is not guessed.)")
     return result, derived_url
 
 
 def step3c_get_derived_form(session, derived_url: str) -> dict:
-    print("\n=== Step 3c：使用推導出的網址 GET 實際表單，檢查欄位是否存在 ===")
+    print("\n=== Step 3c: GET the derived URL and check which fields are present ===")
     if not derived_url:
-        print("  Step 3b 未能推導出網址，依規則不猜測，略過此步驟。")
+        print("  Step 3b derived no URL, and guessing one is not allowed. Skipping.")
         return {"skipped": True, "reason": "no derived url from step 3b"}
 
     result = _get_summary(session, derived_url, save_as="step3c_essf21.html")
@@ -358,7 +364,8 @@ def step3c_get_derived_form(session, derived_url: str) -> dict:
         print(f"  [error] {result['error']}")
         return result
 
-    print(f"  狀態碼：{result['status']}，最終網址：{result['final_url']}，標題：{result['title']!r}")
+    print(f"  status: {result['status']}, final URL: {result['final_url']}, "
+          f"title: {result['title']!r}")
 
     if parser:
         target_presence = {f: (f in parser.element_ids) for f in TARGET_FORM_FIELDS}
@@ -368,12 +375,12 @@ def step3c_get_derived_form(session, derived_url: str) -> dict:
         result["target_field_presence"] = target_presence
         result["webforms_hidden_field_lengths"] = webforms_presence
 
-        print("  表單欄位存在性（只檢查是否存在，不讀值）：")
+        print("  Target field presence (presence only - values are never read):")
         for f, present in target_presence.items():
-            print(f"    {f}: {'存在' if present else '不存在'}")
-        print("  ASP.NET WebForms 隱藏狀態欄位（只回報長度，不回報內容）：")
+            print(f"    {f}: {'present' if present else 'absent'}")
+        print("  ASP.NET WebForms hidden state fields (lengths only, never values):")
         for f, length in webforms_presence.items():
-            print(f"    {f}: {'不存在' if length is None else f'存在，長度 {length}'}")
+            print(f"    {f}: {'absent' if length is None else f'present, length {length}'}")
 
     return result
 
@@ -381,7 +388,7 @@ def step3c_get_derived_form(session, derived_url: str) -> dict:
 def main():
     print(f"EIP_URL = {EIP_URL}")
     print(f"EIP_HOST = {EIP_HOST}")
-    print(f"輸出目錄（HTML 快照，已 gitignore）= {OUT_DIR}\n")
+    print(f"Output directory for HTML snapshots (gitignored) = {OUT_DIR}\n")
 
     findings = {"eip_url": EIP_URL, "eip_host": EIP_HOST}
 
@@ -392,7 +399,7 @@ def main():
 
     findings["step1"] = step1_authenticated_homepage(session)
     if "error" in findings["step1"]:
-        print("\n[stop] Step 1 失敗，無法繼續後續步驟。")
+        print("\n[stop] Step 1 failed; the later steps cannot run.")
         _dump_findings(findings)
         return
 
@@ -407,8 +414,8 @@ def main():
     findings["step3c"] = step3c_get_derived_form(session, derived_url)
 
     _dump_findings(findings)
-    print(f"\n完整結構化結果（機敏欄位已遮罩/僅保留長度）已存到 {OUT_DIR / 'findings.json'}")
-    print("下一步：請把這次的主控台輸出與 findings.json 提供給 Claude，用於撰寫 docs/http-webforms-poc.md。")
+    print(f"\nStructured results (sensitive fields masked or reduced to lengths) "
+          f"written to {OUT_DIR / 'findings.json'}")
 
 
 def _dump_findings(findings: dict) -> None:

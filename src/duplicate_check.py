@@ -3,22 +3,22 @@
 If submit_form() fails or trip_form.verify_submission() returns UNKNOWN,
 nothing may retry the send blindly - that risks filing the same trip
 twice. Before any retry (or before a fresh send that a user asked to
-redo after an earlier ambiguous result), check 表單追蹤處理 > 原稿資料匣
-for a pending ESSF21 submission that already matches this trip's date,
-time and traveler.
+redo after an earlier ambiguous result), check the form-tracking
+drafts folder for a pending ESSF21 submission that already matches this
+trip's date, time and traveler.
 
 DOM verified by hand against two real submissions
 (202601020001, 202601010001) - not guessed:
 - #tdBar4 (in the tree.aspx frame) switches the sidebar into
-  「表單追蹤處理」 mode.
-- Its "原稿資料匣" > "未分類" node loads a frame at
+  form-tracking mode.
+- Its drafts > uncategorized node loads a frame at
   .../FormBox/sentBox.aspx?FolderID=... containing a standard ASP.NET
   GridView (id="GridView1").
 - Each result row's document-number cell has a `title` attribute equal
   to the document number itself (e.g. title="202601020001") - this is
   what this module keys off of, rather than a specific row CSS class
   name, since only the title-attribute pattern was directly confirmed.
-- The 主旨 column's text is "{填單人姓名} {date} {start}-{end}", e.g.
+- The subject column reads "{filer name} {date} {start}-{end}", e.g.
   "王小明 2026/08/04 09:00-18:30" - confirmed from both real
   submissions, and what matching is based on here.
 
@@ -33,8 +33,8 @@ fixed below.
    timed out waiting for a folder that was never shown. Everything here now
    tests whether an element is actually rendered.
 
-2. exact=False matched the wrong node. `get_by_text('原稿資料匣',
-   exact=False)` also matches the large hidden container divs (their
+2. exact=False matched the wrong node. Matching the folder label with
+   exact=False also matches the large hidden container divs (their
    combined text contains that string) and `.first` picked one of those.
    Matching is exact=True now, so only the leaf node qualifies.
 
@@ -128,10 +128,10 @@ def _click_if_visible(locator, timeout=3000) -> bool:
 
 
 def _navigate_to_sent_originals(page, timeout_ms: int = 10000, force_reload: bool = True):
-    """Get the 原稿資料匣 > 未分類 grid frame, clicking through the sidebar
-    as needed.
+    """Get the drafts > uncategorized grid frame, clicking through the
+    sidebar as needed.
 
-    force_reload re-clicks 未分類 even when a sentBox frame is already
+    force_reload re-clicks the folder even when a sentBox frame is already
     present. Returning the existing frame is faster but can hand back a
     list the browser cached earlier - which is exactly how a freshly
     created document went missing during a real submission.
@@ -143,7 +143,9 @@ def _navigate_to_sent_originals(page, timeout_ms: int = 10000, force_reload: boo
 
     tree = find_tree_frame(page)
     if tree is None:
-        raise RuntimeError("找不到左側樹狀選單 frame（tree.aspx），無法查詢表單追蹤。")
+        raise RuntimeError(
+            "Sidebar tree frame (tree.aspx) not found - cannot query form tracking."
+        )
 
     # #tdBar4 shows the tracking panel. Test for the folder being RENDERED,
     # not merely present: the panel's markup exists (0x0) from page load, so
@@ -153,15 +155,15 @@ def _navigate_to_sent_originals(page, timeout_ms: int = 10000, force_reload: boo
             tree.click(TRACKING_BUTTON_SELECTOR, timeout=8000)
         except Exception as e:  # noqa: BLE001
             raise RuntimeError(
-                f"點擊「表單追蹤處理」（{TRACKING_BUTTON_SELECTOR}）失敗：{e}"
+                f"Failed to click the form-tracking button ({TRACKING_BUTTON_SELECTOR}): {e}"
             ) from e
         if not _wait_for_visible_text(page, ORIGINAL_FOLDER_TEXT, PANEL_SWITCH_TIMEOUT_MS):
             raise RuntimeError(
-                "已點擊「表單追蹤處理」，但「原稿資料匣」始終沒有顯示出來，"
-                "側邊欄結構可能已改版。"
+                "Clicked the form-tracking button but the drafts folder never became "
+                "visible - the sidebar structure may have changed."
             )
 
-    # Expand 原稿資料匣 so its 未分類 child appears.
+    # Expand the drafts folder so its uncategorized child appears.
     tree = find_tree_frame(page)
     if _visible_exact_text_count(tree, UNCATEGORIZED_FOLDER_TEXT) == 0:
         _click_if_visible(tree.get_by_text(ORIGINAL_FOLDER_TEXT, exact=True))
@@ -170,7 +172,8 @@ def _navigate_to_sent_originals(page, timeout_ms: int = 10000, force_reload: boo
     tree = find_tree_frame(page)
     if _visible_exact_text_count(tree, UNCATEGORIZED_FOLDER_TEXT) == 0:
         raise RuntimeError(
-            "「原稿資料匣」已顯示，但展開後看不到「未分類」，側邊欄結構可能已改版。"
+            "The drafts folder is visible but expanding it revealed no uncategorized "
+            "node - the sidebar structure may have changed."
         )
     _click_if_visible(tree.get_by_text(UNCATEGORIZED_FOLDER_TEXT, exact=True))
 
@@ -186,8 +189,9 @@ def _navigate_to_sent_originals(page, timeout_ms: int = 10000, force_reload: boo
         page.wait_for_timeout(300)
 
     raise RuntimeError(
-        "點擊「表單追蹤處理 > 原稿資料匣 > 未分類」後，等不到原稿清單載入完成，"
-        "畫面可能已改版或目前的樹狀選單展開狀態跟預期不同。"
+        "Clicked through form tracking > drafts > uncategorized but the draft list "
+        "never finished loading - the page may have changed, or the tree is in an "
+        "unexpected expand/collapse state."
     )
 
 
@@ -219,7 +223,7 @@ def _extract_document_rows(grid_frame) -> list:
 
 
 def trip_row_pattern(trip) -> "re.Pattern":
-    """Matches the 主旨 column's "{trip date} {start}-{end}" run.
+    """Matches the subject column's "{trip date} {start}-{end}" run.
 
     Deliberately one contiguous pattern rather than three independent
     substring checks. A row carries TWO dates - when it was submitted and
@@ -240,10 +244,10 @@ def trip_row_pattern(trip) -> "re.Pattern":
 
 
 def find_existing_submission(page, trip, timeout_ms: int = 10000) -> list:
-    """Returns a list of {docNumber, text} for pending (未結案) ESSF21
-    submissions whose 主旨 shows this exact trip date and time range -
-    i.e. a likely duplicate of `trip`. Empty list means no match found
-    under the default 未結案表單 filter.
+    """Returns a list of {docNumber, text} for open ESSF21 submissions
+    whose subject shows this exact trip date and time range - i.e. a
+    likely duplicate of `trip`. Empty list means no match found under the
+    folder's default "not yet closed" filter.
 
     `trip` needs .date, .start_time, .end_time attributes (a
     trip_form.TripRequest works directly).

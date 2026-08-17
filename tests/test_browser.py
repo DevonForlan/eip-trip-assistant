@@ -115,8 +115,8 @@ def test_connect_restarts_the_browser_once_when_it_hangs(no_restart_side_effects
     result = browser._connect_with_recovery(FakePlaywright(chromium))
 
     assert result == "browser-2"
-    assert killed == [True], "應該先關掉卡住的瀏覽器"
-    assert relaunched == [True], "然後重新啟動一個"
+    assert killed == [True], "should kill the wedged browser first"
+    assert relaunched == [True], "then launch a fresh one"
 
 
 def test_connect_gives_up_after_one_restart(no_restart_side_effects):
@@ -127,8 +127,8 @@ def test_connect_gives_up_after_one_restart(no_restart_side_effects):
     with pytest.raises(browser.CdpConnectionError) as excinfo:
         browser._connect_with_recovery(FakePlaywright(chromium))
 
-    assert chromium.calls == 2, "只重試一次，不無限重啟"
-    assert "msedge.exe" in str(excinfo.value), "失敗訊息要附上手動啟動指令"
+    assert chromium.calls == 2, "retries exactly once - never restarts in a loop"
+    assert "msedge.exe" in str(excinfo.value), "failure text must include the manual launch command"
 
 
 def test_connect_uses_a_short_timeout_not_playwrights_180s_default(no_restart_side_effects):

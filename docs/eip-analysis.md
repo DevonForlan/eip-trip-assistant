@@ -1,15 +1,15 @@
-# EIP - 出差登記 網站探索分析報告
+# EIP trip-registration - site exploration report
 
-產出時間：2026-08-10 23:09:43 +0800
+Generated: 2026-08-10 23:09:43 +0800
 
-EIP URL：http://eip.example.com/EFNET/
+EIP URL: http://eip.example.com/EFNET/
 
-## 1. 首頁結構
+## 1. Homepage structure
 
-- 首頁標題：電子簽核
-- 首頁 URL：http://eip.example.com/EFNET/
-- Frame 數量：16
-- **偵測到多個 frame（可能是傳統 frameset 或 iframe 結構）**
+- Title: 電子簽核 (the portal's own title, verbatim)
+- URL: http://eip.example.com/EFNET/
+- Frame count: 16
+- **Multiple frames detected (a classic frameset or nested iframes)**
 
 | # | name | url | is_main |
 |---|---|---|---|
@@ -30,9 +30,9 @@ EIP URL：http://eip.example.com/EFNET/
 | 14 | iSendDeptCover | about:blank | False |
 | 15 | contents3 | http://eip.example.com/EFNET/src/_Common/AppUtil/FrameSet/ShowStatus.aspx | False |
 
-## 2. 「出差登記」觸發元素
+## 2. The trip-registration trigger element
 
-以文字關鍵字 `出差登記` 找到 6 個候選元素（依可能性排序，非唯一猜測 - 請人工確認正確項目）：
+Searching for the text `出差登記` ("trip registration") found 6 candidate elements, ranked by likelihood. These are candidates, not a single guess - confirm the right one by hand:
 
 | tag | type | id | name | label（推測） | text | frame | 建議 selector |
 |---|---|---|---|---|---|---|---|
@@ -43,16 +43,16 @@ EIP URL：http://eip.example.com/EFNET/
 | font |  |  |  |  | 出差登記(ESSF21)(149) | T/src/_Common/AppUtil/FrameSet/tree.aspx | `div#treeUsedFunction > table > tbody > tr > td > a > font` |
 | span |  | ESSCCDJ003_lbl |  |  | 出差登記ID | FRM&AFormStatus=CREATE&ProductName=EFNET | `#ESSCCDJ003_lbl` |
 
-完整資訊（含 outerHTML / xpath）另存於 `config/selectors.discovered.json`。
+Full detail (including outerHTML / xpath) is written to `config/selectors.discovered.json`.
 
-## 3. 點擊後的行為
+## 3. What happens on click
 
-- 實際成功點擊的元素：tag=`a` id=`ESSF21` frame=`http://eip.example.com/EFNET/src/_Common/AppUtil/FrameSet/platform.aspx`
+- The element that was actually clicked: tag=`a` id=`ESSF21` frame=`http://eip.example.com/EFNET/src/_Common/AppUtil/FrameSet/platform.aspx`
 
-- 偵測結果：**same_page_or_frame_unconfirmed**
-  （沒有新視窗；同一個 Page 內以導覽或 frame 內容更新方式呈現）
-- 表單頁 URL：http://eip.example.com/EFNET/
-- 表單頁 Frame 數量：16
+- Detected mode: **same_page_or_frame_unconfirmed**
+  (No new window; the same Page either navigated or updated frame content.)
+- Form page URL: http://eip.example.com/EFNET/
+- Form page frame count: 16
 
 | # | name | url | is_main |
 |---|---|---|---|
@@ -73,9 +73,9 @@ EIP URL：http://eip.example.com/EFNET/
 | 14 | iSendDeptCover | about:blank | False |
 | 15 | contents3 | http://eip.example.com/EFNET/src/_Common/AppUtil/FrameSet/ShowStatus.aspx | False |
 
-## 4. 出差申請表單欄位清單
+## 4. Form fields
 
-共找到 395 個 input / select / textarea / button 元素（跨所有 frame 遞迴掃描）：
+395 input / select / textarea / button elements found, scanning all frames recursively. Label and text cells quote the live page verbatim:
 
 | tag | type | id | name | label（推測） | text | frame | 建議 selector |
 |---|---|---|---|---|---|---|---|
@@ -475,7 +475,7 @@ EIP URL：http://eip.example.com/EFNET/
 | input | hidden | hiddenIsOnloadReady | hiddenIsOnloadReady |  |  | _Common/AppUtil/FrameSet/ShowStatus.aspx | `#hiddenIsOnloadReady` |
 | select |  | DropDownList1 | DropDownList1 | 語系 | 繁體中文 簡體中文 | _Common/AppUtil/FrameSet/ShowStatus.aspx | `#DropDownList1` |
 
-### Checkbox（共 3）
+### Checkboxes (3)
 
 | tag | type | id | name | label（推測） | text | frame | 建議 selector |
 |---|---|---|---|---|---|---|---|
@@ -483,7 +483,7 @@ EIP URL：http://eip.example.com/EFNET/
 | input | checkbox | ESSCCDJ023_1_chk | ESSCCDJ023_1$chk |  |  | FRM&AFormStatus=CREATE&ProductName=EFNET | `#ESSCCDJ023_1_chk` |
 | input | checkbox | ESSCCDJ038_chk | ESSCCDJ038$chk |  |  | FRM&AFormStatus=CREATE&ProductName=EFNET | `#ESSCCDJ038_chk` |
 
-### Radio（共 5）
+### Radios (5)
 
 | tag | type | id | name | label（推測） | text | frame | 建議 selector |
 |---|---|---|---|---|---|---|---|
@@ -493,139 +493,139 @@ EIP URL：http://eip.example.com/EFNET/
 | input | radio | ESSCCDJ016_rdbl_0 | ESSCCDJ016$rdbl | 按申請登記 |  | FRM&AFormStatus=CREATE&ProductName=EFNET | `#ESSCCDJ016_rdbl_0` |
 | input | radio | ESSCCDJ016_rdbl_1 | ESSCCDJ016$rdbl | 直接登記 |  | FRM&AFormStatus=CREATE&ProductName=EFNET | `#ESSCCDJ016_rdbl_1` |
 
-### Select 選項內容
+### Select options
 
 - `ddlModule`：請選擇..(0), RES電子表單模組(RES), ESS PLUS模組(AppFormESS), 移動社交辦公(IMG)
 - `DropDownList1`：繁體中文(Lang01), 簡體中文(Lang03)
 
-## 5. 截圖清單
+## 5. Screenshots
 
 - `screenshots/01_home_after_attach.png`
 - `screenshots/02_before_click_trip_registration.png`
 - `screenshots/03_trip_form_page.png`
-- `screenshots/04_form_fields_body.png` — 出差申請/出差類別/日期時間/出差地點/出差原因/備註（人工捲動後截圖）
-- `screenshots/05_form_detail_grid.png` — 表單最下方的「出差明細」出差人清單（目前是空的）
+- `screenshots/04_form_fields_body.png` - the application / trip category / dates and times / location / reason / remarks block (captured after scrolling by hand)
+- `screenshots/05_form_detail_grid.png` - the traveler detail list at the bottom of the form (currently empty)
 
-## 6. Session 保存
+## 6. Session handling
 
-- 此次分析是連線到你手動啟動並登入的 Edge (CDP attach)，並非由本程式建立/儲存的 session 檔案。
-- EIP 要求 Windows 整合驗證（NTLM/Negotiate），Playwright 自行啟動的瀏覽器無法完成這個驗證且不會顯示原生登入框，因此改用「連線到你手動啟動並登入的 Edge」（Chrome DevTools Protocol attach）方式，而非 Playwright 產生/保存的 storage_state 檔案。
-- Edge 使用獨立的 profile 目錄 `C:\Users\youruser\OneDrive - example.com\桌面\個人\EIP自動化\eip-trip-assistant\.edge-profile`（已加入 .gitignore），只要不刪除這個目錄，下次直接照第一步指令重新啟動 Edge，通常不需要再次登入（除非 session 已在伺服器端過期）。
+- This analysis attached over CDP to an Edge that was launched and signed in to by hand; no session file is created or stored by this program.
+- EIP requires Windows Integrated Authentication (NTLM/Negotiate). A browser Playwright launches itself cannot complete that handshake and surfaces no native credential prompt, so this attaches over the Chrome DevTools Protocol to an Edge that is already signed in, rather than using a Playwright-managed storage_state file.
+- Edge uses its own profile directory `<project>\.edge-profile` (gitignored). As long as that directory survives, relaunching Edge with the same command usually needs no fresh sign-in, unless the server-side session has expired.
 
-## 7. 給 Phase 2 的建議（已完成，見第 8 節）
+## 7. Notes for building the automation (done - see section 8)
 
-- 完整原始資料（含 outerHTML、xpath、cssPath）已寫入 `config/selectors.discovered.json`，Phase 2 的 `src/trip_form.py` 應以此檔案為主要依據，而非重新猜測 selector。
-- 若欄位 id 看起來像 ASP.NET WebForms 自動產生的長 id（例如 `ctl00_ContentPlaceHolder1_txtDate`），優先用 `id` 或 `name` 精確匹配，避免用文字內容做選擇（文字可能因語系/版本而變動）。
-- 若表單位於 iframe 或 popup 內，Phase 2 填表前務必先取得對應的 `Frame`/`Page` 物件，再對該物件操作，不能直接對最外層 `page` 操作。
-- 送出前所有欄位務必先做「必填檢查」與「內容回顯確認」，並等待使用者輸入 `y` 才能呼叫送出按鈕，任何情況下都不可自動送出。
+- The full raw data (outerHTML, xpath, cssPath) is written to `config/selectors.discovered.json`. Base `src/trip_form.py` on that file rather than guessing selectors again.
+- Where ids look like ASP.NET WebForms generated names (e.g. `ctl00_ContentPlaceHolder1_txtDate`), match exactly on `id` or `name` rather than on visible text, which can shift with locale or version.
+- When the form lives in an iframe or popup, obtain that `Frame`/`Page` object first and operate on it - never on the outermost `page`.
+- Before sending, always check required fields and read the values back from the live page for the user to confirm. Only call the send button after an explicit `y`; never send automatically.
 
-## 8. 人工驗證後的欄位對照表（`ESSF21` 出差登記表單）
+## 8. Hand-verified field map (the `ESSF21` trip-registration form)
 
-自動掃描對這個 ESS 模組的 label 猜測大多失敗（不是標準 `<td>` 排版），以下是實際捲動畫面、
-比對 DOM 座標後人工驗證過的對照表。表單所在 frame：
+The automatic scan's label guesses mostly failed for this ESS module (it does not use a standard `<td>` layout), so the map below was verified by hand, scrolling the real screen and
+comparing DOM coordinates. The form's frame:
 
 `http://eip.example.com/HRMESS/src/ESS/ESSF21/ESSF21.aspx?...`（frame name: `framePlus`）
 
-| 使用者輸入欄位 | 畫面標籤 | 對應 id | 型態 | 備註 |
+| User input | On-screen label | id | Type | Notes |
 |---|---|---|---|---|
-| 出差日期（開始） | 開始日期 | `ESSCCDJ024_txt` | text，格式 `YYYY/MM/DD` | 旁邊有 `...` 按鈕開日期選擇器，直接 `.fill()` 應該也可以 |
-| 開始時間 | 開始時間 | `ESSCCDJ025_txt` | text，格式 `HH:mm` | 同上，旁邊也有 `...` 按鈕 |
-| 出差日期（結束） | 結束日期 | `ESSCCDJ026_txt` | text，格式 `YYYY/MM/DD` | 若使用者只給一個日期，開始/結束日期都填同一天 |
-| 結束時間 | 結束時間 | `ESSCCDJ027_txt` | text，格式 `HH:mm` | |
-| 出差地點 | 出差地點 | `ESSCCDJ028_txt` | **textarea** | 目前預設空白 |
-| 出差事由 | 出差原因 | `ESSCCDJ037_txt` | **textarea** | 使用者說的「出差事由」對應畫面上的「出差原因」 |
-| 備註 | 備註 | `ESSCCDJ029_txt` | **textarea** | |
-| （無對應欄位） | — | — | — | **這個表單沒有「交通方式」欄位**，見下方說明 |
+| trip date (start) | 開始日期 (start date) | `ESSCCDJ024_txt` | text, format `YYYY/MM/DD` | there is a `...` button beside it that opens a date picker, but `.fill()` should work directly |
+| start time | 開始時間 (start time) | `ESSCCDJ025_txt` | text, format `HH:mm` | as above, also has a `...` button |
+| trip date (end) | 結束日期 (end date) | `ESSCCDJ026_txt` | text, format `YYYY/MM/DD` | when the user gives only one date, start and end are both filled with it |
+| end time | 結束時間 (end time) | `ESSCCDJ027_txt` | text, format `HH:mm` | |
+| trip location | 出差地點 (trip location) | `ESSCCDJ028_txt` | **textarea** | blank by default |
+| trip reason | 出差原因 (trip reason) | `ESSCCDJ037_txt` | **textarea** | what the user calls the trip's purpose maps to this label |
+| remarks | 備註 (remarks) | `ESSCCDJ029_txt` | **textarea** | |
+| (no matching field) | — | — | — | **this form has no transport field** - see below |
 
-其他觀察到、但使用者流程不需要填的欄位：
+Other fields that were observed but that the user's flow never fills in:
 
-| 畫面標籤 | 對應 id | 說明 |
+| On-screen label | id | Notes |
 |---|---|---|
-| 出差類別 | 顯示文字 `ESSCCDJ022_txt`（唯讀顯示）＋代碼 `ESSCCDJ020_txt` / `ESSCCDJ021_txt` | 預設值「701 平日出差」。使用者的填寫流程沒有指定出差類別，所以 `trip_form.fill_form()` 刻意不去動這個欄位，保留系統預設值。若未來需要改這個欄位，才需要另外測試是否能直接 `.fill()` 還是要模擬點擊 `...` 彈窗 |
-| 扣除休息班次 / 扣除非在崗時間 / 扣除休息班次內加班就餐段 | `ESSCCDJ023_chk` / `ESSCCDJ023_1_chk` / `ESSCCDJ038_chk` | 3 個 checkbox，目前預設只勾選第 3 個。使用者流程沒有提到這些，Phase 2 應保留預設值，不要主動勾/取消 |
-| 出差申請 | `ESSCCDJ018_txt` | 唯讀（灰底），目前是「直接登記」模式所以不需填 |
-| 填單人／填單人公司／部門／職位／填單日期／申請人 | `ESSCCDJ004~015`, `ESSCCDJ033~035` | 系統依登入者自動帶入，不需要也不應該覆寫 |
-| 出差明細（表單最下方的表格） | `ESSCCDD001~016`（透過 `GridUserControl1` 操作） | 列出「出差人」清單，目前是空的；`直接登記` 模式下似乎不強制要填，但送出前應確認是否為必填 |
+| 出差類別 (trip category) | display text `ESSCCDJ022_txt` (read-only) plus codes `ESSCCDJ020_txt` / `ESSCCDJ021_txt` | defaults to "701 weekday trip". The user's flow never specifies a category, so `trip_form.fill_form()` deliberately leaves this field alone and keeps the system default. Changing it in future would need separate testing of whether `.fill()` works or the `...` popup has to be clicked |
+| deduct rest shift / deduct off-post time / deduct meal breaks during overtime | `ESSCCDJ023_chk` / `ESSCCDJ023_1_chk` / `ESSCCDJ038_chk` | 3 checkboxes; by default only the third is checked. The user's flow never mentions them, so the defaults should be preserved rather than checked or unchecked deliberately |
+| 出差申請 (trip application) | `ESSCCDJ018_txt` | read-only (greyed); not needed in the current "direct registration" mode |
+| filer / filer's company / department / position / filing date / applicant | `ESSCCDJ004~015`, `ESSCCDJ033~035` | populated by the system from the signed-in user; neither necessary nor appropriate to overwrite |
+| trip detail (the grid at the bottom of the form) | `ESSCCDD001~016` (driven through `GridUserControl1`) | lists the travelers, currently empty. It appears not to be mandatory in "direct registration" mode, but that should be confirmed before sending |
 
-### ⚠️ 沒有「交通方式」欄位
+### ⚠️ There is no transport field
 
-實際畫面（`screenshots/04_form_fields_body.png`）從上到下依序是：
-出差申請 → 出差類別（含 3 個 checkbox） → 開始/結束日期時間 → 出差地點 → 出差原因 → 備註 → 出差明細表。
+The real screen (`screenshots/04_form_fields_body.png`), top to bottom, is:
+trip application → trip category (with its 3 checkboxes) → start/end dates and times → location → reason → remarks → the traveler detail grid.
 
-**整個出差登記表單沒有「交通方式」這個欄位（已確認，非猜測）。** 有一個第 4 個隱藏的 textarea
-（`ESSCCDJ036_txt`，`offsetParent === null`，畫面上不可見），原本猜測可能是「彈性欄位」功能保留的欄位。
-實際點擊畫面上的「彈性欄位」按鈕（`GridUserControl1_BtnExtraField`）確認：該按鈕是 `disabled` 狀態，
-其 `onclick` 內容是 `alert('該作業尚未設定彈性欄位!')`——也就是這個表單的彈性欄位功能根本沒有被系統管理者
-設定，`ESSCCDJ036_txt` 目前用不到，也不會顯示任何標籤。
+**The whole trip-registration form has no transport field. Confirmed, not guessed.** There is a fourth hidden textarea
+(`ESSCCDJ036_txt`, `offsetParent === null`, invisible on screen) that was initially guessed to be reserved for the "flexible fields" feature.
+Clicking the flexible-fields button (`GridUserControl1_BtnExtraField`) settled it: the button is `disabled`, and
+its `onclick` is an alert reading "no flexible fields have been configured for this operation" - so the feature was never
+set up for this form by an administrator. `ESSCCDJ036_txt` is unused and displays no label.
 
-**結論**：這個 EIP 出差登記表單就是沒有交通方式欄位。建議把交通方式資訊附加寫進「備註」欄位
-（例如「備註：Q3 MongoDB 維護作業；交通方式：捷運」）。若一定要有獨立的交通方式欄位，需要請
-EIP 系統管理者在後台設定「彈性欄位」，這超出本工具能自動化的範圍。
+**Conclusion**: this EIP trip-registration form simply has no transport field. The suggested approach is to append the transport
+information to the remarks field (e.g. "remarks: Q3 MongoDB maintenance; transport: metro"). A dedicated transport field would
+require an EIP administrator to configure flexible fields in the back office, which is beyond what this tool can automate.
 
-## 9. Phase 2 實作與驗證結果
+## 9. Implementation and verification
 
-Phase 2 已經實作並在真實登入的畫面上實測（只測填表，全程未點擊任何送出/儲存按鈕）：
+The automation is implemented and was tested against a real signed-in screen (filling only - no send or save button was ever clicked):
 
-- `src/eip_client.py`：`open_trip_form(page)` 會自動點擊上方工具列的「出差登記」捷徑（banner frame 內
-  `td#tdMenu_1 > table > tbody > tr > td:nth-of-type(2)`），並等待表單的 iframe
-  （`ESS/ESSF21/ESSF21.aspx`）真正載入完成才回傳，重跑時若表單已經開著會直接沿用，不會重複點擊。
-- `src/trip_form.py`：`fill_form()` 依第 8 節對照表填入 開始/結束日期時間、出差地點、出差原因，並把
-  交通方式併入備註；`check_required_fields()` 讀回這些欄位確認都有值；`submit_form()` 點擊表單外層
-  frame（`EPI/EPIE001/EPIE001.aspx`）裡的 `#MasterPage_btnCreateToolSendForm`。
-- **送出按鈕已確認、非猜測**：直接讀取按鈕的 `title` 屬性（沒有點擊，純讀取 DOM），
-  `MasterPage_btnCreateToolSendForm` 的 `title="傳送"`，`MasterPage_btnCreateToolSaveForm` 的
-  `title="草稿儲存"`——確認前者才是真正的「送出」動作，本工具使用前者。
-- **實測結果**：用使用者提供的範例資料（`2026/08/12 09:00–17:30／富邦金控／MongoDB 系統維護／
-  捷運／Q3 MongoDB 維護作業`）呼叫 `fill_form()`，畫面截圖見
-  `screenshots/08_phase2_fill_test_scrolled.png`，所有欄位都填到正確位置，
-  `check_required_fields()` 回傳空清單（無缺漏）。全程未呼叫 `submit_form()`。
-- `src/main.py` 的送出流程有兩層確認：填單前的資料摘要確認（第一次 `y`），以及填完表單、
-  從瀏覽器讀回實際內容顯示給使用者看之後的最終確認（第二次 `y`），只有兩次都輸入 `y`
-  才會呼叫 `submit_form()`。
+- `src/eip_client.py`: `open_trip_form(page)` clicks the trip-registration shortcut in the top toolbar (inside the banner frame,
+  `td#tdMenu_1 > table > tbody > tr > td:nth-of-type(2)`) and returns only once the form's iframe
+  (`ESS/ESSF21/ESSF21.aspx`) has genuinely finished loading. On a re-run, an already-open form is reused rather than clicked again.
+- `src/trip_form.py`: `fill_form()` fills the start/end dates and times, location and reason per the section 8 map, and folds
+  the transport into the remarks; `check_required_fields()` reads those fields back to confirm each has a value; `submit_form()` clicks
+  `#MasterPage_btnCreateToolSendForm` in the form's outer frame (`EPI/EPIE001/EPIE001.aspx`).
+- **The send button is confirmed, not guessed**: reading the buttons' `title` attributes directly (DOM read only, no click),
+  `MasterPage_btnCreateToolSendForm` has `title="傳送"` (send) and `MasterPage_btnCreateToolSaveForm` has
+  `title="草稿儲存"` (save draft) - confirming the former is the real send action, which is what this tool uses.
+- **Measured result**: calling `fill_form()` with the sample data the user provided (`2026/08/12 09:00-17:30 / <client site> /
+  MongoDB system maintenance / metro / Q3 MongoDB maintenance`), screenshot at
+  `screenshots/08_phase2_fill_test_scrolled.png`, put every value in the right place and
+  `check_required_fields()` returned an empty list (nothing missing). `submit_form()` was never called.
+- `src/main.py`'s send flow has two confirmation layers: a summary of the data before filling (the first `y`), and a final
+  confirmation after the form is filled and the actual values have been read back off the browser and shown to the user (the second
+  `y`). `submit_form()` is called only when both were `y`.
 
-## 10. 2026-08 架構修正與技術驗證
+## 10. Architecture revision and technical verification, 2026-08
 
-實際運作過程中發現幾個原始設計沒考慮到的風險（重複送出、session 過期時仍繼續操作、
-對話框無差別 accept），做了一次完整的架構檢討與修正。新增/修改的模組：
+Running this for real surfaced several risks the original design had not accounted for (duplicate submission, carrying on after
+the session expired, accepting dialogs indiscriminately), prompting a full architecture review. Modules added or changed:
 
-| 模組 | 功能 | 對應問題 |
+| Module | What it does | The problem it addresses |
 |---|---|---|
-| `src/session.py` | `check_session(page)` 回傳 AUTHENTICATED/EXPIRED/UNKNOWN | 舊版只檢查 URL 是否含 `example.com`，連登出頁都會誤判為有效 session |
-| `src/state_machine.py` | `TripFlow` 明確狀態機（AUTHENTICATED→FORM_OPEN→FORM_FILLED→TRAVELER_SAVED→READY_TO_SEND→SENDING→SENT，任何步驟可轉 SESSION_EXPIRED/FAILED） | 舊版是線性函式呼叫，沒有明確的「目前在哪一步」；轉入 SESSION_EXPIRED 會立即拋出例外，禁止任何自動重送 |
-| `src/dialog_handler.py` | `DialogRecorder` 依 dialog 類型與訊息關鍵字分類處理 | 舊版 `submit_form()` 對任何 dialog 無條件 accept，有誤送風險；現在 beforeunload 自動接受，confirm 只在訊息不含「已存在/重複/覆蓋/錯誤/失敗/逾時/過期」等關鍵字時才接受，alert/prompt 一律不自動接受 |
-| `src/network_log.py` | `NetworkRecorder` 記錄「儲存」「傳送」的 request/response/requestfailed | 舊版完全沒有網路層記錄，除錯只能靠截圖猜測；Authorization/Cookie 一律遮罩，POST 只記欄位名稱不記值 |
-| `src/duplicate_check.py` | `find_existing_submission()` 查詢「表單追蹤處理 > 原稿資料匣」是否已有相同日期/時間的單據 | 送出失敗或結果不明時，避免盲目重試造成重複送件；DOM 結構（`#tdBar4`、`GridView1`、`td[title]` 為單號）皆為即時探索確認，非猜測 |
-| `trip_form.verify_submission()` | 用單據編號格式（`單據:ESSF21 出差登記 (數字)`）判斷 SUCCESS/FAILED/UNKNOWN | 舊版靠「畫面清空」推論成功，但 session 過期時畫面也會清空，曾實際造成誤判 |
-| `trip_form.add_traveler()` | 正式函式化「填出差人編號→觸發驗證→點儲存」，內建 dialog + network 雙紀錄器 | 舊版這個動作只在對話中用一次性腳本做過，沒有寫進正式程式碼 |
+| `src/session.py` | `check_session(page)` returns AUTHENTICATED/EXPIRED/UNKNOWN | the old code only checked whether the URL contained `example.com`, so even the sign-out page counted as a valid session |
+| `src/state_machine.py` | `TripFlow`, an explicit state machine (AUTHENTICATED→FORM_OPEN→FORM_FILLED→TRAVELER_SAVED→READY_TO_SEND→SENDING→SENT, with any step able to move to SESSION_EXPIRED/FAILED) | the old code was a linear sequence of calls with no explicit notion of "which step are we on". Entering SESSION_EXPIRED now raises immediately and forbids any automatic resend |
+| `src/dialog_handler.py` | `DialogRecorder` classifies handling by dialog type and message keywords | the old `submit_form()` accepted any dialog unconditionally, risking an accidental send. Now beforeunload is auto-accepted, confirm is accepted only when the message contains none of the "already exists / duplicate / overwrite / error / failed / timed out / expired" keywords, and alert/prompt are never auto-accepted |
+| `src/network_log.py` | `NetworkRecorder` records request/response/requestfailed around the save and send actions | there was no network-layer record at all before, leaving debugging to guesswork over screenshots. Authorization and Cookie are always masked, and POST logging keeps field names without values |
+| `src/duplicate_check.py` | `find_existing_submission()` checks the document tracking view's draft folder for an existing document with the same date and time | avoids blind retries turning into duplicate submissions when a send fails or its outcome is unclear. The DOM structure (`#tdBar4`, `GridView1`, `td[title]` holding the document number) was confirmed by live exploration, not guessed |
+| `trip_form.verify_submission()` | judges SUCCESS/FAILED/UNKNOWN from the document-number format | the old code inferred success from "the screen cleared", but an expired session clears the screen too, which had already caused one false reading |
+| `trip_form.add_traveler()` | turns "enter the traveler code → trigger validation → click save" into a real function, with both the dialog and network recorders built in | this action had only ever been done by a one-off script in conversation, never written into the production code |
 
-### 技術驗證結果（Playwright 官方文件 + 實測）
+### Technical verification (Playwright's own docs plus measurement)
 
-- **`connect_over_cdp()` fidelity 確實較低**（官方文件原文："significantly lower fidelity than
-  the Playwright protocol connection"），但改用 `launch_persistent_context(channel="msedge")`
-  直接測試後**證實登入這一步無法用這個方式解決**——只要導覽是 Playwright 呼叫的，不管是不是
-  真正的 Edge，一律撞 `ERR_INVALID_AUTH_CREDENTIALS`。CDP-attach 目前仍是登入階段唯一可行的
-  workaround，這個限制與「是否為 CDP」有關，與瀏覽器種類、GPO 政策無關。
-- **beforeunload dialog 的攔截不穩定是已知問題**，不是本專案設定錯誤。Playwright 官方 GitHub
+- **`connect_over_cdp()` really does have lower fidelity** (the docs' words: "significantly lower fidelity than
+  the Playwright protocol connection"), but testing `launch_persistent_context(channel="msedge")`
+  directly **proved that this does not solve the sign-in step** - any navigation Playwright initiates hits
+  `ERR_INVALID_AUTH_CREDENTIALS`, real Edge or not. CDP attach remains the only workable route for
+  sign-in; the restriction turns on whether CDP is involved, not on the browser or GPO policy.
+- **Unreliable interception of beforeunload dialogs is a known issue**, not a misconfiguration here. Playwright's GitHub
   issue [#14431](https://github.com/microsoft/playwright/issues/14431)、
-  [#14305](https://github.com/microsoft/playwright/issues/14305) 證實「導覽觸發的 beforeunload」
-  攔截不穩定是長期存在、未完全解決的行為；`page.close(run_before_unload=True)` 觸發的
-  beforeunload 才是官方文件保證支援的情境。`DialogRecorder` 仍嘗試自動接受，但架構上假設它
-  可能失敗。
-- **Chrome DevTools MCP**（Google 官方，2026-06 收錄進 Microsoft Learn 文件）適合作為探索/
-  除錯輔助工具，但官方明確警告 auto-connect 模式會讓 agent 繼承目前 session（可能外洩 PII），
-  EIP 涉及員工個資，若採用必須在受控環境使用、不掛接正式帳號 session。正式送出流程維持
-  deterministic Playwright 程式，不讓任何 MCP/agent 直接操作。
+  [#14305](https://github.com/microsoft/playwright/issues/14305) confirms that intercepting a navigation-triggered beforeunload
+  has long been unreliable and is not fully resolved; only the beforeunload triggered by
+  `page.close(run_before_unload=True)` is a scenario the docs guarantee. `DialogRecorder` still tries to accept
+  automatically, but the architecture assumes it may fail.
+- **Chrome DevTools MCP** (Google's own, added to the Microsoft Learn docs in 2026-06) suits exploration and
+  debugging, but its documentation warns explicitly that auto-connect mode lets an agent inherit the current session (potentially
+  leaking PII). EIP handles employee personal data, so adopting it would require a controlled environment and no production
+  account session. The production send flow stays deterministic Playwright code, with no MCP or agent driving it directly.
 
-### 整合測試中發現的真實 bug（附帶修正）
+### Real bugs found during integration testing (fixed along the way)
 
-- `duplicate_check.find_existing_submission()` 會把側邊選單切到「表單追蹤處理」模式，這會讓
-  當時開著的「出差登記」分頁內容變成不可見（不只是失焦，是真的 `display` 被隱藏），
-  導致後續 `add_traveler()` 找不到欄位。修正：新增 `eip_client.reactivate_trip_form_tab()`，
-  在查完重複後、操作表單前，先點擊 jQuery UI Tabs 的分頁錶頭（`#ESSF21`，在 `platform.aspx`
-  frame 裡）把分頁切回前景。
-- `duplicate_check` 的樹狀選單導覽邏輯原本假設每次都要先點 `#tdBar4` 才能進入追蹤模式，
-  但如果側邊選單已經處於追蹤模式（例如同一個瀏覽器 session 裡前一次呼叫已經切換過），
-  `#tdBar4` 根本不存在，點擊會逾時。修正：先檢查「原稿資料匣」文字是否已經可見，
-  已經在追蹤模式就跳過點擊 `#tdBar4` 這一步。
+- `duplicate_check.find_existing_submission()` switches the sidebar into document-tracking mode, which makes the
+  currently open trip-registration tab's content invisible - not merely unfocused, but genuinely `display`-hidden -
+  so the following `add_traveler()` could not find its fields. Fix: added `eip_client.reactivate_trip_form_tab()`,
+  which clicks the jQuery UI Tabs header (`#ESSF21`, in the `platform.aspx` frame) to bring the tab back to the
+  foreground after the duplicate check and before touching the form.
+- `duplicate_check`'s sidebar navigation assumed `#tdBar4` always had to be clicked to enter tracking mode, but when
+  the sidebar is already in tracking mode (e.g. a previous call in the same browser session already switched it),
+  `#tdBar4` does not exist at all and the click times out. Fix: check first whether the draft-folder text is already
+  visible, and skip the `#tdBar4` click when tracking mode is already active.
 
-以上兩個問題都是在真實 EIP 環境下跑整合測試時發現的，不是理論推測。
+Both were found running integration tests against the real EIP, not reasoned about in the abstract.

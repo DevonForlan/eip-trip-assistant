@@ -17,10 +17,10 @@ class FakeTrip:
     date: str = "2026/08/05"
     start_time: str = "09:00"
     end_time: str = "18:30"
-    location: str = "客戶端 A 辦公室"
-    reason: str = "系統建置"
-    transport: str = "捷運"
-    note: str = "備註"
+    location: str = "Client site A"
+    reason: str = "System build-out"
+    transport: str = "MRT"
+    note: str = "a note"
 
 
 def _form_html(extra: str = "") -> str:
@@ -53,8 +53,8 @@ def test_trip_fields_land_on_the_names_declared_in_the_html():
     assert values["ESSCCDJ025$txt"] == "09:00"
     assert values["ESSCCDJ026$txt"] == "2026/08/05"  # single-day trip mirrors start
     assert values["ESSCCDJ027$txt"] == "18:30"
-    assert values["ESSCCDJ028$txt"] == "客戶端 A 辦公室"
-    assert values["ESSCCDJ037$txt"] == "系統建置"
+    assert values["ESSCCDJ028$txt"] == "Client site A"
+    assert values["ESSCCDJ037$txt"] == "System build-out"
 
 
 def test_post_name_is_read_from_html_not_derived_from_the_id():
@@ -91,13 +91,13 @@ def test_disabled_save_button_never_enters_the_payload():
 def test_transport_is_folded_into_the_note_field():
     form = parse_form(_form_html())
     payload = build_trip_payload(form, FakeTrip())
-    assert dict(payload.fields)["ESSCCDJ029$txt"] == "備註；交通方式：捷運"
+    assert dict(payload.fields)["ESSCCDJ029$txt"] == "a note；交通方式：MRT"
 
 
 def test_note_with_transport_handles_empty_parts():
     assert note_with_transport("", "") == ""
-    assert note_with_transport("只有備註", "") == "只有備註"
-    assert note_with_transport("", "捷運") == "交通方式：捷運"
+    assert note_with_transport("note only", "") == "note only"
+    assert note_with_transport("", "MRT") == "交通方式：MRT"
 
 
 def test_traveler_code_is_only_included_when_asked_for():

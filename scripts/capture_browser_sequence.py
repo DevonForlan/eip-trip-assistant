@@ -3,7 +3,7 @@
 Attaches to the user's already-logged-in Edge via the existing,
 UNMODIFIED browser.attach_context(), verifies the session is
 AUTHENTICATED via the existing, UNMODIFIED session.check_session(),
-then clicks "出差登記" (reusing eip_client's own selector/text
+then clicks the trip-registration shortcut (reusing eip_client's own selector/text
 constants, but with a locally-implemented click+wait so this script
 can take cookie snapshots at intermediate points - eip_client.py
 itself is never imported for mutation, only for its constants).
@@ -26,7 +26,7 @@ more detail per request):
   from that API is deliberately dropped before anything is saved.
 - Query-string values for Identifier / LoginId / ClientIP (the fields
   the user identified as session-bound or personal): replaced with
-  "<存在，長度=N，sha256前8碼=XXXXXXXX>". Every other query parameter
+  "<present, length=N, sha256[:8]=XXXXXXXX>". Every other query parameter
   name (TaskId, AFormType, AFormStatus, ProductName, FormID, Product)
   is a static routing constant, not sensitive, and is kept as-is.
 - POST field values: never read - only field name, value length, and a
@@ -38,7 +38,7 @@ more detail per request):
   never embedded verbatim in generated docs.
 
 Run (after making sure you're logged into EIP in a debug-enabled Edge -
-see README.md "執行 Phase 1 探索" 第一步, or just run this and follow
+see the README's setup section, or just run this and follow
 the printed manual-launch instructions if it can't attach automatically):
 
     python scripts/capture_browser_sequence.py
@@ -79,9 +79,9 @@ MARKERS = [
 
 def _summarize_sensitive(value: str) -> str:
     if not value:
-        return "<空值>"
+        return "<empty>"
     digest = hashlib.sha256(value.encode("utf-8", errors="replace")).hexdigest()[:8]
-    return f"<存在，長度={len(value)}，sha256前8碼={digest}>"
+    return f"<present, length={len(value)}, sha256[:8]={digest}>"
 
 
 def _summarize_url(url: str) -> dict:
@@ -305,7 +305,8 @@ class SequenceRecorder:
             self._cdp.send("Network.enable")
             self._cdp.on("Network.requestWillBeSent", self._on_cdp_request)
         except Exception as e:  # noqa: BLE001
-            print(f"  [note] 無法啟用 CDP Network 事件，initiator 欄位這次會是空的：{e}")
+            print(f"  [note] Could not enable CDP Network events; initiator fields will "
+                  f"be empty this run: {e}")
             self._cdp = None
         return self
 
@@ -330,7 +331,7 @@ def _click_trip_registration(page) -> None:
             banner = f
             break
     if banner is None:
-        raise RuntimeError("找不到 banner frame（titlebar1.aspx）")
+        raise RuntimeError("Banner frame (titlebar1.aspx) not found")
     try:
         banner.locator(eip_client.TRIGGER_SELECTOR).click(timeout=5000)
         return
@@ -338,7 +339,7 @@ def _click_trip_registration(page) -> None:
         pass
     candidates = banner.get_by_text(eip_client.TRIGGER_TEXT, exact=False)
     if candidates.count() == 0:
-        raise RuntimeError("找不到「出差登記」可點擊元素")
+        raise RuntimeError("No clickable trip-registration element found")
     candidates.first.click(timeout=5000)
 
 
@@ -353,7 +354,7 @@ def _wait_for_frame_containing(page, fragment: str, timeout_ms: int = 20000):
 
 
 def _run_experiment_b(events: list) -> list:
-    print("\n=== Experiment B：EPIE001 回應 → ESSF21 請求之間的事件 ===")
+    print("\n=== Experiment B: events between the EPIE001 response and the ESSF21 request ===")
     epie001_idx = None
     essf21_idx = None
     for i, e in enumerate(events):
@@ -362,15 +363,17 @@ def _run_experiment_b(events: list) -> list:
         if essf21_idx is None and "ESSF21.aspx" in e["base_url"] and e["kind"] == "request":
             essf21_idx = i
     if epie001_idx is None or essf21_idx is None or essf21_idx <= epie001_idx:
-        print("  無法在這次序列中同時定位到 EPIE001 回應與後續的 ESSF21 請求，略過。")
+        print("  Could not locate both an EPIE001 response and a later ESSF21 request in "
+              "this sequence. Skipping.")
         _save_json("experiment_b_between_events.json", [])
         return []
 
     between = events[epie001_idx + 1 : essf21_idx]
     if not between:
-        print("  兩者之間沒有任何其他事件 - ESSF21 的請求緊接在 EPIE001 回應之後。")
+        print("  Nothing in between - the ESSF21 request immediately follows the "
+              "EPIE001 response.")
     else:
-        print(f"  兩者之間共 {len(between)} 筆事件，全部標記為 POSSIBLE FORM INITIALIZATION：")
+        print(f"  {len(between)} events in between, all tagged POSSIBLE FORM INITIALIZATION:")
         for e in between:
             e["note"] = (e.get("note") or "").strip() + " POSSIBLE FORM INITIALIZATION"
             print(f"    seq={e['seq']} {e['kind']:14s} {e['method']:6s} {e['base_url']} status={e.get('status')}")
@@ -379,10 +382,10 @@ def _run_experiment_b(events: list) -> list:
 
 
 def _run_experiment_d() -> dict:
-    print("\n=== Experiment D：EPIE001 回應內容關鍵字搜尋 ===")
+    print("\n=== Experiment D: keyword scan of the EPIE001 response body ===")
     path = OUT_DIR / "epie001_response.html"
     if not path.exists():
-        print("  沒有存到 epie001_response.html，略過。")
+        print("  epie001_response.html was never saved. Skipping.")
         return {}
     text = path.read_text(encoding="utf-8", errors="replace")
     results = {}
@@ -390,16 +393,17 @@ def _run_experiment_d() -> dict:
         count = text.count(marker)
         results[marker] = count
         if count:
-            print(f"  {marker!r}: 出現 {count} 次")
+            print(f"  {marker!r}: {count} occurrence(s)")
     has_frame_tag_with_essf21 = bool(re.search(r"<i?frame[^>]*ESSF21\.aspx", text, re.IGNORECASE))
     results["_frame_tag_with_essf21_found"] = has_frame_tag_with_essf21
-    print(f"\n  關鍵結論證據：HTML 是否有 <frame>/<iframe> 標籤直接帶 ESSF21.aspx：{has_frame_tag_with_essf21}")
+    print("\n  Key evidence - does the HTML contain a <frame>/<iframe> tag carrying "
+          f"ESSF21.aspx directly: {has_frame_tag_with_essf21}")
     _save_json("experiment_d_markers.json", results)
     return results
 
 
 def main():
-    print("=== 被動觀察模式：不會填寫、不會儲存、不會送出任何表單 ===\n")
+    print("=== Passive observation only: nothing is filled, saved or submitted ===\n")
 
     with sync_playwright() as pw:
         try:
@@ -411,94 +415,96 @@ def main():
         page = eip_client.open_homepage(context)
 
         state = check_session(page)
-        print(f"目前登入狀態：{state.value}")
+        print(f"Session state: {state.value}")
         if state != SessionState.AUTHENTICATED:
-            print("[stop] 不是 AUTHENTICATED，請先確認登入後再重新執行。")
+            print("[stop] Not AUTHENTICATED - log in first, then re-run.")
             return
 
         if eip_client.find_trip_form_frame(page) is not None:
-            print("[stop] 出差登記表單目前已經是開啟狀態，這次觀察不到「點擊前」的乾淨起點。"
-                  "請先手動關閉該分頁籤（或重新整理首頁），再重新執行本腳本。")
+            print("[stop] A trip-registration form is already open, so there is no clean "
+                  "pre-click starting point to observe. Close that tab (or reload the "
+                  "homepage) and run this again.")
             return
 
-        print("\n=== Experiment C - 快照 1：點擊前 cookies ===")
+        print("\n=== Experiment C - snapshot 1: cookies before the click ===")
         cookies_before = _cookie_snapshot(context)
         _save_json("cookies_before.json", cookies_before)
-        print(f"  數量：{len(cookies_before)}，名稱：{[c['name'] for c in cookies_before]}")
+        print(f"  count: {len(cookies_before)}, names: {[c['name'] for c in cookies_before]}")
 
         recorder = SequenceRecorder()
         recorder.attach(page)
         recorder.phase = "during_click_to_essf21"
 
-        print("\n=== Experiment A - 點擊「出差登記」===")
+        print("\n=== Experiment A - clicking the trip-registration shortcut ===")
         try:
             _click_trip_registration(page)
         except Exception as e:
-            print(f"[error] 點擊失敗：{e}")
+            print(f"[error] Click failed: {e}")
             recorder.detach()
             return
 
-        print("等待 EPIE001.aspx frame 出現...")
+        print("Waiting for the EPIE001.aspx frame to appear...")
         epie001_frame = _wait_for_frame_containing(page, "EPIE001.aspx", timeout_ms=15000)
         if epie001_frame is None:
-            print("  [warn] 15 秒內沒等到 EPIE001.aspx。")
+            print("  [warn] EPIE001.aspx did not appear within 15s.")
         else:
-            print(f"  出現：{epie001_frame.url}")
+            print(f"  appeared: {epie001_frame.url}")
 
-        print("\n=== Experiment C - 快照 2：EPIE001 載入後 cookies ===")
+        print("\n=== Experiment C - snapshot 2: cookies after EPIE001 loaded ===")
         cookies_after_epie001 = _cookie_snapshot(context)
         _save_json("cookies_after_epie001.json", cookies_after_epie001)
-        print(f"  數量：{len(cookies_after_epie001)}，名稱：{[c['name'] for c in cookies_after_epie001]}")
+        print(f"  count: {len(cookies_after_epie001)}, names: {[c['name'] for c in cookies_after_epie001]}")
 
-        print("\n等待 ESSF21.aspx frame 出現...")
+        print("\nWaiting for the ESSF21.aspx frame to appear...")
         essf21_frame = _wait_for_frame_containing(page, "ESSF21.aspx", timeout_ms=20000)
         if essf21_frame is None:
-            print("  [warn] 20 秒內沒等到 ESSF21.aspx - 這本身就是一個重要觀察結果（跟 HTTP POC 觀察到的不可重現現象一致），會如實記錄。")
+            print("  [warn] ESSF21.aspx did not appear within 20s - which is itself a "
+                  "significant observation, matching the non-reproducibility seen in the "
+                  "HTTP POC. Recorded as-is.")
         else:
-            print(f"  出現：{essf21_frame.url}")
+            print(f"  appeared: {essf21_frame.url}")
             try:
                 has_target_field = essf21_frame.locator("#ESSCCDJ024_txt").count() > 0
             except Exception:  # noqa: BLE001
                 has_target_field = False
-            print(f"  ESSCCDJ024_txt 是否存在：{has_target_field}")
+            print(f"  ESSCCDJ024_txt present: {has_target_field}")
 
         recorder.phase = "after_essf21_confirmed"
         page.wait_for_timeout(500)  # let any trailing requests land before detaching
         recorder.detach()
 
-        print("\n=== Experiment C - 快照 3：ESSF21 顯示後（或等待逾時後）cookies ===")
+        print("\n=== Experiment C - snapshot 3: cookies after ESSF21 appeared (or timed out) ===")
         cookies_after_essf21 = _cookie_snapshot(context)
         _save_json("cookies_after_essf21.json", cookies_after_essf21)
-        print(f"  數量：{len(cookies_after_essf21)}，名稱：{[c['name'] for c in cookies_after_essf21]}")
+        print(f"  count: {len(cookies_after_essf21)}, names: {[c['name'] for c in cookies_after_essf21]}")
 
         names_before = {c["name"] for c in cookies_before}
         names_mid = {c["name"] for c in cookies_after_epie001}
         names_after = {c["name"] for c in cookies_after_essf21}
-        print(f"\n  點擊前 → EPIE001 後 新增的 cookie：{names_mid - names_before or '（無）'}")
-        print(f"  EPIE001 後 → ESSF21 後 新增的 cookie：{names_after - names_mid or '（無）'}")
+        print(f"\n  cookies added between pre-click and EPIE001: {names_mid - names_before or '(none)'}")
+        print(f"  cookies added between EPIE001 and ESSF21   : {names_after - names_mid or '(none)'}")
 
         for f in page.frames:
             if "EPIE001.aspx" in f.url:
                 try:
                     _save_text("epie001_response.html", f.content())
                 except Exception as e:  # noqa: BLE001
-                    print(f"  [note] 無法讀取 EPIE001 frame content：{e}")
+                    print(f"  [note] Could not read the EPIE001 frame content: {e}")
             if "ESSF21.aspx" in f.url:
                 try:
                     _save_text("essf21_response.html", f.content())
                 except Exception as e:  # noqa: BLE001
-                    print(f"  [note] 無法讀取 ESSF21 frame content：{e}")
+                    print(f"  [note] Could not read the ESSF21 frame content: {e}")
 
         events_dicts = [asdict(e) for e in recorder.events]
         _save_json("sequence.json", events_dicts)
-        print(f"\n完整序列（{len(events_dicts)} 筆事件）已存到 {OUT_DIR / 'sequence.json'}")
+        print(f"\nFull sequence ({len(events_dicts)} events) written to {OUT_DIR / 'sequence.json'}")
 
         _run_experiment_b(events_dicts)
         _save_json("sequence.json", events_dicts)  # re-save with Experiment B's POSSIBLE FORM INITIALIZATION notes
         _run_experiment_d()
 
-        print(f"\n完成。所有結果在 {OUT_DIR}（已 gitignore）。"
-              "接下來請把這些結果交給 Claude 撰寫 docs/browser-vs-http-sequence.md。")
+        print(f"\nDone. All results are in {OUT_DIR} (gitignored).")
 
 
 if __name__ == "__main__":

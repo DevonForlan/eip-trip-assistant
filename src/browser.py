@@ -16,7 +16,7 @@ to read/fill the DOM afterwards - never to navigate.
 That launch also needs --auth-server-allowlist. This dedicated profile
 does not inherit whatever makes the user's everyday Edge log in silently,
 so without the flag Chromium refuses to send Windows credentials
-automatically and pops a native "Windows 安全性" credential dialog
+automatically and pops a native Windows credential dialog
 instead. Nobody answers that dialog in an automated run, the request ends
 up unauthenticated, and the tab lands on chrome-error://chromewebdata/ -
 which for a long time was misdiagnosed here as flaky NTLM negotiation
@@ -208,7 +208,9 @@ def ensure_debug_edge(url: str = EIP_URL, attempts: int = 3, settle_timeout_seco
     times rather than just waiting once with a long timeout.
     """
     if not Path(EDGE_EXE).exists():
-        raise CdpConnectionError(f"找不到 Edge：{EDGE_EXE}。請設定環境變數 EIP_EDGE_PATH。")
+        raise CdpConnectionError(
+            f"Edge not found at {EDGE_EXE}. Set the EIP_EDGE_PATH environment variable."
+        )
 
     for attempt in range(1, attempts + 1):
         if _launch_debug_edge_once(url, settle_timeout_seconds):
@@ -218,7 +220,8 @@ def ensure_debug_edge(url: str = EIP_URL, attempts: int = 3, settle_timeout_seco
             time.sleep(1)
 
     raise CdpConnectionError(
-        f"啟動 Edge 逾時（已重試 {attempts} 次，可能一直卡在 NTLM/DNS 重試），請確認網路狀態。"
+        f"Timed out launching Edge after {attempts} attempts - it may be stuck retrying "
+        "NTLM/DNS. Check the network connection."
     )
 
 
@@ -238,8 +241,8 @@ def _connect_with_recovery(playwright: Playwright) -> Browser:
     try:
         return playwright.chromium.connect_over_cdp(CDP_URL, timeout=CONNECT_TIMEOUT_MS)
     except Exception as first_error:  # noqa: BLE001 - any failure means "try a restart"
-        print(f"[warn] CDP 連線失敗（{type(first_error).__name__}），"
-              "研判 debug Edge 已卡住，重新啟動後再試一次...")
+        print(f"[warn] CDP connection failed ({type(first_error).__name__}); "
+              "treating the debug Edge as wedged, restarting and trying once more...")
 
     _kill_debug_edge()
     time.sleep(2)
@@ -249,11 +252,12 @@ def _connect_with_recovery(playwright: Playwright) -> Browser:
         browser = playwright.chromium.connect_over_cdp(CDP_URL, timeout=CONNECT_TIMEOUT_MS)
     except Exception as e:  # noqa: BLE001
         raise CdpConnectionError(
-            f"重新啟動 Edge 後仍無法連線到 {CDP_URL}：{e}\n"
-            "請自己執行以下指令開啟 Edge 並確認登入成功，再重新執行本程式：\n"
+            f"Still cannot connect to {CDP_URL} after restarting Edge: {e}\n"
+            "Launch Edge yourself with the command below, confirm you are logged in, "
+            "then run this program again:\n"
             f"  {_manual_launch_command()}"
         ) from e
-    print("[info] 重新啟動後連線成功。")
+    print("[info] Connected after restart.")
     return browser
 
 
@@ -271,8 +275,9 @@ def _ensure_debug_edge_or_explain() -> None:
         # failing outright, so the tool still works even when the
         # automatic route doesn't settle in time.
         raise CdpConnectionError(
-            "自動開啟 Edge 逾時，可能是網路連線不穩定。請自己執行以下指令開啟 Edge 並確認登入成功，"
-            "再重新執行本程式：\n"
+            "Timed out launching Edge automatically - the network may be unstable. "
+            "Launch it yourself with the command below, confirm you are logged in, "
+            "then run this program again:\n"
             f"  {_manual_launch_command()}"
         )
 
@@ -293,7 +298,8 @@ def attach_context(playwright: Playwright) -> tuple[Browser, BrowserContext]:
     """
     if not ensure_vpn_connected():
         raise VpnRequiredError(
-            "連不到 EIP，且等待 VPN 連線逾時。請確認 FortiClient 是否已連線成功再重試。"
+            "EIP is unreachable and waiting for the VPN timed out. "
+            "Check that FortiClient has connected, then retry."
         )
 
     _ensure_debug_edge_or_explain()
@@ -303,7 +309,7 @@ def attach_context(playwright: Playwright) -> tuple[Browser, BrowserContext]:
     except CdpConnectionError:
         raise
     except Exception as e:  # noqa: BLE001 - surfaced as a clear setup error
-        raise CdpConnectionError(f"無法連線到 {CDP_URL}：{e}") from e
+        raise CdpConnectionError(f"Cannot connect to {CDP_URL}: {e}") from e
     context = browser.contexts[0] if browser.contexts else browser.new_context()
 
     # Playwright can take a beat to finish enumerating the CDP session's

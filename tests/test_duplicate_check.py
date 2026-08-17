@@ -142,7 +142,7 @@ class FakeTreeFrame:
             self._switched = True
 
     def get_by_text(self, text, exact=False):
-        raise AssertionError("不應該在面板尚未顯示時就去點文字節點")
+        raise AssertionError("must not click text nodes while the panel is still hidden")
 
 
 class FakePageForNav:
@@ -177,7 +177,7 @@ def test_http_cross_check_returns_none_when_unavailable(monkeypatch):
     import http_eip_client
 
     def boom():
-        raise RuntimeError("SSPI 不可用")
+        raise RuntimeError("SSPI unavailable")
 
     monkeypatch.setattr(http_eip_client, "fetch_sent_box_rows", boom)
     assert duplicate_check.find_existing_submission_via_http(
@@ -231,7 +231,7 @@ def test_browser_result_still_stands_when_http_is_unavailable(monkeypatch):
         lambda page, timeout_ms=10000, force_reload=True: FakeGridFrame([row]),
     )
     monkeypatch.setattr(http_eip_client, "fetch_sent_box_rows",
-                        lambda: (_ for _ in ()).throw(RuntimeError("網路不通")))
+                        lambda: (_ for _ in ()).throw(RuntimeError("network unreachable")))
 
     found = duplicate_check.find_existing_submission_anywhere(
         page=None, trip=make_trip("2026/08/04", "09:00", "18:30"))

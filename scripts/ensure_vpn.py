@@ -34,20 +34,20 @@ import browser  # noqa: E402
 
 
 def main():
-    print(f"檢查是否連得到 EIP（{browser.EIP_HOST}）...")
+    print(f"Checking whether EIP ({browser.EIP_HOST}) is reachable...")
     if browser.is_eip_reachable():
-        print("[ok] 已經連得到，不需要開 FortiClient。")
+        print("[ok] Reachable - no need to open FortiClient.")
         return
 
-    print("[info] 連不到，可能是 VPN 沒連上。正在開啟 FortiClient...")
-    print("請在 FortiClient 視窗裡連線並用手機完成 QR code 驗證。")
-    print("這裡會自動每幾秒檢查一次，最多等 3 分鐘...")
+    print("[info] Not reachable - the VPN is probably down. Opening FortiClient...")
+    print("Connect in the FortiClient window and complete the 2FA QR scan on your phone.")
+    print("This will re-check every few seconds, for up to 3 minutes...")
 
     if browser.ensure_vpn_connected():
-        print("[ok] 已經連上了，可以繼續執行 scripts/inspect_eip.py 或 src/main.py 了。")
+        print("[ok] Connected - you can now run scripts/inspect_eip.py or src/main.py.")
     else:
-        print("[warn] 等太久還是連不到，請確認 FortiClient 是否已經連線成功，"
-              "或手動檢查網路狀態後再重新執行本程式。")
+        print("[warn] Timed out and EIP is still unreachable. Check that FortiClient "
+              "actually connected, or inspect the network by hand, then re-run this.")
 
 
 if __name__ == "__main__":

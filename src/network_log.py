@@ -1,8 +1,8 @@
-"""Network request/response logging for specific actions (儲存/傳送).
+"""Network request/response logging for specific actions (save / send).
 
 Records enough to reconstruct what an ASP.NET postback actually did,
 instead of guessing from screenshots - the recurring problem during the
-2026-08 testing session ("儲存" once silently redirected to a
+2026-08 testing session (a save click once silently redirected to a
 session-expired page instead of saving, and it took several rounds of
 manual poking to figure that out).
 

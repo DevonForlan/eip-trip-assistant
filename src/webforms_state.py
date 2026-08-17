@@ -16,7 +16,7 @@ successful_controls() follows the HTML "successful controls" rules rather
 than dumping every element:
   - a control needs a name to be submitted
   - disabled controls are never submitted (ESSF21 renders 12 disabled
-    inputs, including the 儲存 button)
+    inputs, including the save button)
   - checkbox/radio only when checked
   - textarea submits its text content, not a value attribute
   - select submits its selected option(s)
@@ -310,7 +310,7 @@ def parse_form(html: str, index: int = 0) -> FormState:
     producing a silently empty payload."""
     forms = parse_forms(html)
     if not forms:
-        raise ValueError("HTML 裡找不到任何 <form>，頁面結構可能已改變。")
+        raise ValueError("No <form> found in the HTML - the page structure may have changed.")
     if index >= len(forms):
-        raise ValueError(f"HTML 只有 {len(forms)} 個 <form>，取不到第 {index} 個。")
+        raise ValueError(f"The HTML only has {len(forms)} <form> element(s); index {index} is out of range.")
     return forms[index]

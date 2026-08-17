@@ -54,8 +54,9 @@ class UnexpectedDialogError(RuntimeError):
         self.dialog_type = dialog_type
         self.message = message
         super().__init__(
-            f"跳出未預期的 {dialog_type} 對話框，訊息：「{message}」。"
-            "已自動 dismiss（不接受），避免誤送/誤存 - 請人工確認畫面狀態後再重試。"
+            f"Unexpected {dialog_type} dialog: {message!r}. "
+            "It was dismissed rather than accepted, so nothing was saved or sent by "
+            "accident - check the screen state by hand before retrying."
         )
 
 

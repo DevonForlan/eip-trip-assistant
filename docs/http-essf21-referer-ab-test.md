@@ -1,143 +1,172 @@
-# ESSF21 Referer A/B Test 結果
+# ESSF21 Referer A/B test: results
 
-> **⚠️ 後續更新（已被 `docs/http-epie001-init-condition.md` 取代部分結論）**
-> 本文件推測的「同一使用者只能有一個建立中 ESSF21 分頁」**已被推翻**。真正原因是這 6 個
-> session 全都**沒有 GET 過 `CollectData.aspx`**——那是 EPIE001 回傳完整版的必要初始化
-> 步驟。同時 **Referer 也已被排除**（不帶 Referer 但走過 CollectData 的請求 5/5 成功）。
-> 以下內容保留作為當時的觀察記錄，結論部分請以新文件為準。
+> **⚠️ Later update (parts of this superseded by `docs/http-epie001-init-condition.md`)**
+> The hypothesis here — "a user may only have one in-creation ESSF21 tab" — **has
+> been disproven**. The real cause is that none of these 6 sessions had **ever
+> GETted `CollectData.aspx`**, the initialization step EPIE001 requires before it
+> returns the full version. **Referer has also been ruled out** (requests without a
+> Referer that did walk CollectData succeeded 5/5). The content below is kept as
+> the record of what was observed at the time; for conclusions, defer to the newer
+> document.
 
-**目的**：驗證 Referer 標頭是否是 `requests` + SSPI 能不能拿到 ESSF21.aspx 真正內容的
-必要條件。6 次完全獨立的 `requests.Session()`（A×3 無 Referer／B×3 有 Referer），每次
-都重新 SSPI 驗證、重新走一次 EFNET → EPIE001 → ESSF21，確保沒有任何一次共用 Identifier。
-只有 GET，全程沒有任何 POST（腳本本身可用 `grep "\.post("` 自行確認）。
+**Goal**: determine whether the Referer header is a prerequisite for `requests` +
+SSPI to obtain ESSF21.aspx's real content. Six completely independent
+`requests.Session()` runs (A×3 without Referer, B×3 with), each re-authenticating
+via SSPI and walking EFNET → EPIE001 → ESSF21 afresh, so no Identifier is ever
+shared. GET only; no POST anywhere (verifiable in the script with
+`grep "\.post("`).
 
-**結果先講：這次測試沒有跑到能真正比較 Referer 的階段。** 6 次獨立 session，
-**全部**在 Step 2（GET `EPIE001.aspx?FormID=ESSF21`）就卡住——內容一致是
-**15,275 bytes**、裡面沒有指向 ESSF21.aspx 的 `<frame>` 標籤，跟
-`docs/http-webforms-poc.md` 裡觀察到的「精簡版」回應完全一致。因為連 ESSF21 的網址都
-沒拿到，A 組和 B 組都沒有任何一次真正送出「有沒有帶 Referer」的 GET ESSF21 請求可以比較。
+**Result up front: this test never reached the stage where Referer could actually
+be compared.** All six independent sessions got stuck at Step 2 (GET
+`EPIE001.aspx?FormID=ESSF21`) — consistently **15,275 bytes**, with no `<frame>`
+tag pointing at ESSF21.aspx, exactly matching the "slim" response observed in
+`docs/http-webforms-poc.md`. Since the ESSF21 URL was never obtained, neither group
+ever issued a GET ESSF21 request whose Referer presence could be compared.
 
 ---
 
-## 結果表
+## Results
 
-| Run | Referer | EPIE001 狀態 | EPIE001 Bytes | ESSF21 網址 | HTTP | Body Bytes | ESSCCDJ024 | VIEWSTATE | Identifier Hash | Delay ms |
+| Run | Referer | EPIE001 status | EPIE001 bytes | ESSF21 URL | HTTP | Body bytes | ESSCCDJ024 | VIEWSTATE | Identifier hash | Delay ms |
 |---|---|---|---|---|---|---|---|---|---|---|
-| A1 | 無 | 200 | 15,275 | 未取得 | — | — | — | — | — | — |
-| B1 | 有 | 200 | 15,275 | 未取得 | — | — | — | — | — | — |
-| A2 | 無 | 200 | 15,275 | 未取得 | — | — | — | — | — | — |
-| B2 | 有 | 200 | 15,275 | 未取得 | — | — | — | — | — | — |
-| A3 | 無 | 200 | 15,275 | 未取得 | — | — | — | — | — | — |
-| B3 | 有 | 200 | 15,275 | 未取得 | — | — | — | — | — | — |
+| A1 | no | 200 | 15,275 | not obtained | — | — | — | — | — | — |
+| B1 | yes | 200 | 15,275 | not obtained | — | — | — | — | — | — |
+| A2 | no | 200 | 15,275 | not obtained | — | — | — | — | — | — |
+| B2 | yes | 200 | 15,275 | not obtained | — | — | — | — | — | — |
+| A3 | no | 200 | 15,275 | not obtained | — | — | — | — | — | — |
+| B3 | yes | 200 | 15,275 | not obtained | — | — | — | — | — | — |
 
-6 次的 `EPIE001 Bytes` 完全一致（15,275），不是隨機波動，是穩定重現的同一種「精簡版」
-回應。因為沒有拿到 ESSF21 網址，這次完全沒有機會取得 Identifier、沒有機會計算它的
-hash、也沒有機會量測 EPIE001→ESSF21 之間的延遲——這些欄位在這次結果裡如實標示為
-「未取得」，不是遺漏記錄。
-
----
-
-## 判定：INCONCLUSIVE（依你訂的規則）
-
-依你原本的判斷準則，這個結果不落在任何一個乾淨的分類裡：
-
-- 不是「A 多次 200+0 bytes、B 多次 200+144KB」（兩組連 ESSF21 都沒打到）
-- 不是「A、B 都成功」
-- 也跟你預期的「A、B 都失敗」不完全一樣——你設想的失敗情境是「兩組都打到 ESSF21
-  但都拿到空的 200」，這次的實際情況是**兩組都還沒走到 ESSF21 那一步**，卡在更前面
-  的 EPIE001 階段。
-
-**依你的指示：標記 INCONCLUSIVE，不自行進 Phase 3。**
+All six `EPIE001 bytes` figures are identical (15,275) — not random variation but
+the same "slim" response, stably reproduced. Because no ESSF21 URL was obtained,
+there was no opportunity to capture an Identifier, hash it, or measure the
+EPIE001→ESSF21 delay; those columns are honestly marked "not obtained" rather than
+simply omitted.
 
 ---
 
-## 這代表什麼：一個新的、更有力的假設
+## Verdict: INCONCLUSIVE (per your criteria)
 
-**Referer 這次完全沒被測試到，不是被否定，是「還排不上輪」。** 真正值得注意的是：
-**6 次完全獨立、互不共用任何 cookie/session 的 HTTP 呼叫，全部得到一模一樣的精簡版
-回應**——這強烈暗示卡住的原因**跟 HTTP session／cookie／Referer 這些屬於單次連線的
-東西都無關**，而是某種**跟「登入者身分」本身綁定、跨連線持續存在**的伺服器端狀態。
+Against the criteria you set, this result falls into none of the clean categories:
 
-把目前為止所有觀察串起來看，時間順序上最合理的一條解釋：
+- Not "A repeatedly 200+0 bytes, B repeatedly 200+144KB" (neither group even
+  reached ESSF21)
+- Not "both A and B succeed"
+- Not quite your anticipated "both A and B fail" either — the failure you had in
+  mind was "both reach ESSF21 and both get an empty 200", whereas what actually
+  happened is that **neither group got as far as ESSF21**, stalling earlier at the
+  EPIE001 stage.
 
-1. 最早那次 `http_eip_explorer.py` 成功一次（拿到完整版 EPIE001、真正的 ESSF21 網址）。
-2. 從那之後，同一天內所有後續的 `requests` 呼叫都拿到精簡版——包含這次全新 6 個
-   session 也一樣。
-3. 但中間有一次**真實瀏覽器**點擊「出差登記」，EPIE001 又成功了一次（另一個全新的
-   Identifier），ESSF21 也真的拿到 144,494 bytes 的完整內容。
-4. 這次（在瀏覽器那次成功之後）又全部回到精簡版。
-
-這個模式跟「**同一個使用者（不是同一個 session/cookie）同時只能有一個『建立中』的
-ESSF21 分頁，一旦有任何一次成功建立（不管是瀏覽器還是 requests），在它被關閉或逾時
-之前，所有後續嘗試都會拿到精簡版**」這個假設高度吻合——目前是最有解釋力的理論，
-但**還沒有直接證實**，因為還沒有做過「刻意觸發關閉分頁後馬上重試」這種直接驗證。
-
-這件事你在 `docs/http-webforms-poc.md` 的「下一步最小實驗 (c)」裡其實已經預先想到了
-（測試呼叫關閉分頁的後端邏輯），而這次的結果讓這個假設變得更可信，但**呼叫關閉分頁
-功能目前仍在你的「暫時不要做」清單裡，這次沒有執行，也不會自行執行**。
+**Per your instruction: marked INCONCLUSIVE, not proceeding to Phase 3.**
 
 ---
 
-## 回答 6 個問題
+## What this means: a new, stronger hypothesis
 
-**1. Referer 是否為必要條件？**
-無法判斷——這次的樣本完全沒有走到能比較 Referer 的那一步。A、B 兩組在唯一有意義的
-差異點（有沒有帶 Referer）出現之前，就已經因為同一個原因（EPIE001 回精簡版）雙雙
-停下來，所以這個問題目前仍是開放的。
+**Referer was not disproven here — it never got its turn.** What is genuinely
+notable is that **six fully independent HTTP calls, sharing no cookie or session,
+all produced an identical slim response**. That strongly suggests the blocker has
+**nothing to do with per-connection things like HTTP session, cookies or Referer**,
+and is instead some server-side state **bound to the signed-in identity and
+persisting across connections**.
 
-**2. ESSF21 是否已能由純 HTTP 穩定取得？**
-不能。這次 6 次全部失敗（在比取得 ESSF21 內容更早的階段就失敗）。目前累積下來的紀錄
-是：3 次成功（1 次純 HTTP + 1 次真實瀏覽器空既有 EPIE001，加上瀏覽器那次真的把
-ESSF21 也拿到手）對比多次失敗，穩定性遠遠不夠。
+Stringing all the observations together, the most plausible chronological reading:
 
-**3. Identifier 是否看起來具有單次使用特性？**
-這次沒有新證據可以回答這個問題（沒有拿到任何新的 Identifier）。維持上一份報告的
-狀態：不能排除，但也不是唯一合理的解釋——現在看來「每個使用者只能有一個建立中分頁」
-這個假設，解釋力比「Identifier 單次有效」更好，因為它同時解釋了「為什麼是精簡版而不是
-空的 200」以及「為什麼會連續很多次都一樣、不是隨機的」。
+1. The very first `http_eip_explorer.py` run succeeded once (full EPIE001, a real
+   ESSF21 URL).
+2. From then on, every subsequent `requests` call that day got the slim version —
+   including these six brand-new sessions.
+3. In between, though, a **real browser** click on the trip shortcut made EPIE001
+   succeed once more (with another brand-new Identifier), and ESSF21 really did
+   return 144,494 bytes of content.
+4. This run (after the browser's success) is back to slim every time.
 
-**4. ASP.NET Session 是否穩定？**
-穩定，但這次沒有幫上忙。6 個 session 都乾淨地完成了 SSPI 驗證、都拿到 200、都能
-正常對話（`efnet_status`／`epie001_status` 全部是 200，沒有任何一次驗證失敗或連線
-逾時）。問題不在「連不上」或「驗證失敗」，是連上了、驗證也過了，但應用程式邏輯給了
-精簡版內容。
+That pattern fits the hypothesis "**a single user — not a single session or cookie
+— may only have one 'in-creation' ESSF21 tab; once any attempt (browser or
+requests) creates one successfully, every later attempt gets the slim version until
+that tab is closed or times out**" rather well. It is the most explanatory theory
+so far, but it is **not directly confirmed**, because no direct test — deliberately
+triggering a tab close and immediately retrying — has been run.
 
-**5. 是否已符合 Phase 2 成功標準？**
-沒有。原始 Phase 2 的成功標準是「純 HTTP 取得真正的 ESSF21 內容並解析出欄位」——
-這次不但沒達成，連上一輪已經達成過一次的「取得含真正 Identifier 的 ESSF21 網址」這個
-中間里程碑，這次 6 次都沒能重現。
-
-**6. 下一步應該進 Phase 3，還是繼續 Header/State 分析？**
-都不建議現在做。兩者都建立在「已經能穩定走到 ESSF21 那一步」的前提上，而這次證明現在
-連前一步（EPIE001 給出完整版）都無法穩定重現。**更值得優先搞懂的是「精簡版／完整版」
-這兩種 EPIE001 回應到底由什麼條件切換**——這是比 Referer 更上游、影響更大的問題。
-下一個合理的最小實驗（這次不會自行執行，等你指示）：**確認目前這個使用者是否真的有一個
-「建立中」的 ESSF21 分頁還開著**（例如透過 `duplicate_check.py` 已經驗證過的「表單追蹤
-處理」查詢邏輯去看看，或直接請你在真實 Edge 畫面上檢查目前分頁狀態），而不是急著去猜
-關閉分頁的後端呼叫。
+You had in fact already anticipated this in "smallest next experiment (c)" in
+`docs/http-webforms-poc.md` (test calling the close-tab backend logic), and these
+results make the hypothesis more credible. But **calling the close-tab function is
+still on your "not for now" list, so it was not run here and will not be run
+unprompted.**
 
 ---
 
-## 技術債（已記錄，本次不修復，不與這次 A/B Test 混在一起改）
+## Answers to the six questions
 
-1. **`scripts/capture_browser_sequence.py` 提早讀取 frame content**：偵測到 frame
-   URL 出現就立刻呼叫 `.content()`，沒有等待 `load`/`networkidle`，導致存下來的
-   `essf21_response.html` 只有 1,409 bytes（頁面渲染中的中間狀態），跟網路層記錄的
-   真實 144,494 bytes 不一致。修法應該是仿照 `eip_client.open_trip_form()` 呼叫
-   `frame.wait_for_load_state()`，但這次不動這個檔案。
-2. **`browser.py` 的健康檢查 false positive**：`_eip_tab_has_started_loading()`
-   讀取的 CDP `/json` 中介資料端點，回報的 `url` 欄位有時候跟 Playwright 用
-   `page.url` 讀到的真實畫面網址不一致——親眼確認過一次：`/json` 顯示
-   `http://eip.example.com/EFNET/`，但實際畫面是
-   `chrome-error://chromewebdata/`。這代表 `ensure_debug_edge()` 用來判斷「是否已經
-   成功登入」的訊號本身可能不可靠，跟重試次數多少無關。這次不修改 `browser.py`。
+**1. Is Referer a prerequisite?**
+Undetermined — this sample never reached the point where Referer could be compared.
+Both groups stopped, for the same reason (EPIE001 returning slim), before the one
+meaningful difference between them came into play, so the question stays open.
 
-兩項都只是記錄，等你之後明確要處理登入穩定性的時候再一併討論。
+**2. Can pure HTTP now obtain ESSF21 reliably?**
+No. All six runs failed, at a stage earlier than obtaining ESSF21's content. The
+cumulative record so far: the full EPIE001 has been obtained twice (once over pure
+HTTP, once by a real browser, and in the browser's case ESSF21 itself was obtained
+too) against many failures. Nowhere near reliable.
+
+**3. Does the Identifier look single-use?**
+No new evidence from this run (no new Identifier was obtained). The previous
+report's status stands: not ruled out, but not the only plausible explanation
+either. "One in-creation tab per user" now looks more explanatory than
+"single-use Identifier", because it also explains why the response is the slim
+version rather than an empty 200, and why it repeats identically many times over
+instead of varying randomly.
+
+**4. Is the ASP.NET session stable?**
+Stable, but it did not help here. All six sessions completed SSPI authentication
+cleanly, all got 200s, all conversed normally (`efnet_status` /
+`epie001_status` all 200, with zero authentication failures or connection
+timeouts). The problem is not "cannot connect" or "authentication failed": the
+connection worked, authentication passed, and the application logic served the slim
+content.
+
+**5. Does this meet the Phase 2 success criteria?**
+No. Phase 2's original criterion was "obtain ESSF21's real content over pure HTTP
+and parse out the fields". Not only was that not met, but even the intermediate
+milestone reached once before — obtaining the ESSF21 URL with a real Identifier —
+could not be reproduced in any of the six runs.
+
+**6. Next: Phase 3, or more header/state analysis?**
+Neither, for now. Both presuppose being able to reach ESSF21 reliably, and this run
+shows that even the step before it (EPIE001 returning the full version) cannot be
+reproduced reliably. **What deserves priority is understanding what actually
+switches EPIE001 between its slim and full responses** — a more upstream and more
+consequential question than Referer. The reasonable smallest next experiment (not
+run here, awaiting your direction): **confirm whether this user really does have an
+"in-creation" ESSF21 tab still open** — e.g. via the document-tracking query logic
+already validated in `duplicate_check.py`, or simply by having you check the tab
+state in the real Edge window — rather than rushing to guess at a close-tab backend
+call.
 
 ---
 
-## 目前狀態
+## Technical debt (recorded, not fixed here, deliberately not mixed into this A/B test)
 
-Referer A/B Test 已完成並標記 INCONCLUSIVE，依指示在此停止，不進 Phase 3、不做任何
-POST、不呼叫關閉分頁功能、不修改 `capture_browser_sequence.py`／`browser.py`。等待你
-的下一步指示。
+1. **`scripts/capture_browser_sequence.py` reads frame content too early**: it
+   calls `.content()` as soon as the frame URL appears, without waiting for
+   `load`/`networkidle`, so the saved `essf21_response.html` is only 1,409 bytes (a
+   mid-render intermediate state), inconsistent with the 144,494 bytes the network
+   layer recorded. The fix is to follow `eip_client.open_trip_form()` and call
+   `frame.wait_for_load_state()`, but that file is left alone here.
+2. **A false positive in `browser.py`'s health check**: the CDP `/json` metadata
+   endpoint that `_eip_tab_has_started_loading()` reads sometimes reports a `url`
+   that disagrees with what Playwright sees via `page.url`. Witnessed once
+   directly: `/json` said `http://eip.example.com/EFNET/` while the actual tab was
+   on `chrome-error://chromewebdata/`. So the signal `ensure_debug_edge()` uses to
+   decide "sign-in succeeded" may itself be unreliable, independent of how many
+   times it retries. `browser.py` is not modified here.
+
+Both are recorded only, to be discussed together whenever you decide to tackle
+sign-in stability.
+
+---
+
+## Current status
+
+The Referer A/B test is complete and marked INCONCLUSIVE. Stopping here as
+instructed: no Phase 3, no POST, no close-tab call, and no changes to
+`capture_browser_sequence.py` or `browser.py`. Awaiting your next instruction.

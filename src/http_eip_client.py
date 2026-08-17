@@ -1,4 +1,4 @@
-"""Reach the EIP 出差登記 (ESSF21) form over plain HTTP + Windows SSPI.
+"""Reach the EIP trip-registration (ESSF21) form over plain HTTP + Windows SSPI.
 
 This is the HTTP track. It does not import, modify, or depend on the
 Playwright/CDP track (browser.py / eip_client.py / trip_form.py), which
@@ -99,9 +99,9 @@ class _GetOnlySession(requests.Session):
 
     def _refuse(self, verb: str):
         raise ReadOnlyViolation(
-            f"這個 HttpEipClient 是唯讀模式，拒絕執行 {verb}。"
-            "若要進入會改變伺服器狀態的階段，必須明確以 HttpEipClient(read_only=False) 建立，"
-            "並且要先取得使用者同意。"
+            f"This HttpEipClient is read-only and refuses {verb}. "
+            "Moving to a stage that changes server state requires constructing it "
+            "explicitly as HttpEipClient(read_only=False), with the user's consent first."
         )
 
     def post(self, *a, **kw):
@@ -169,7 +169,7 @@ class HttpEipClient:
 
     def _get(self, url: str, **kw):
         if self.session is None:
-            raise NotInitializedError("尚未呼叫 authenticate()。")
+            raise NotInitializedError("authenticate() has not been called yet.")
         kw.setdefault("timeout", self.timeout)
         return self.session.get(url, **kw)
 
@@ -186,18 +186,19 @@ class HttpEipClient:
         resp = self._get(self.base_url)
         resp.encoding = "utf-8"
         if resp.status_code != 200:
-            raise HttpEipError(f"GET 首頁失敗：HTTP {resp.status_code}")
+            raise HttpEipError(f"GET of the homepage failed: HTTP {resp.status_code}")
 
         self.collectdata_url = _frame_src_matching(resp.text, resp.url, "CollectData.aspx")
         if self.collectdata_url is None:
             raise HttpEipError(
-                "首頁 HTML 裡找不到指向 CollectData.aspx 的 frame src。"
-                "EIP 首頁結構可能已改版 - 這一步是取得完整版表單的必要初始化，不能略過。"
+                "No frame src pointing at CollectData.aspx in the homepage HTML. "
+                "The homepage structure may have changed - this step is the required "
+                "initialization for getting the full form, and cannot be skipped."
             )
 
         resp2 = self._get(self.collectdata_url, allow_redirects=True)
         if resp2.status_code != 200:
-            raise HttpEipError(f"GET CollectData.aspx 失敗：HTTP {resp2.status_code}")
+            raise HttpEipError(f"GET of CollectData.aspx failed: HTTP {resp2.status_code}")
         return self
 
     # --- step 3 -----------------------------------------------------
@@ -205,7 +206,7 @@ class HttpEipClient:
         """GET EPIE001 and confirm it's the full version (the one that
         contains a link to ESSF21)."""
         if self.collectdata_url is None:
-            raise NotInitializedError("尚未呼叫 initialize_efnet()。")
+            raise NotInitializedError("initialize_efnet() has not been called yet.")
 
         self.wrapper_url = urljoin(self.base_url, TRIP_WRAPPER_PATH)
         resp = self._get(self.wrapper_url)
@@ -213,8 +214,9 @@ class HttpEipClient:
         size = len(resp.content)
         if size < WRAPPER_FULL_MIN_BYTES:
             raise SlimWrapperError(
-                f"EPIE001 只回傳 {size:,} bytes（精簡版），代表 CollectData 初始化這次沒有生效。"
-                "不要重試送出任何東西，請先確認初始化步驟。"
+                f"EPIE001 returned only {size:,} bytes (the slim page), so the "
+                "CollectData initialization did not take effect for this session. "
+                "Do not retry sending anything; confirm the initialization step first."
             )
         self.wrapper_html = resp.text
         return self.wrapper_html
@@ -225,12 +227,13 @@ class HttpEipClient:
         it. The URL carries a per-request Identifier, so it is never
         reused across runs."""
         if self.wrapper_html is None:
-            raise NotInitializedError("尚未呼叫 open_trip_wrapper()。")
+            raise NotInitializedError("open_trip_wrapper() has not been called yet.")
 
         url = _frame_src_matching(self.wrapper_html, self.wrapper_url, "ESSF21.aspx")
         if url is None:
             raise HttpEipError(
-                "完整版 EPIE001 裡卻找不到 ESSF21 的 frame src - 不該發生，請人工檢查頁面。"
+                "The full EPIE001 page contains no ESSF21 frame src - that should not "
+                "happen; inspect the page by hand."
             )
 
         resp = self._get(url, headers={"Referer": self.wrapper_url}, allow_redirects=True)
@@ -238,23 +241,24 @@ class HttpEipClient:
         size = len(resp.content)
         if size < FORM_MIN_BYTES:
             raise FormNotRenderedError(
-                f"ESSF21 回傳 HTTP {resp.status_code} 但只有 {size:,} bytes。"
-                "若是 0 bytes，最可能是請求少了 Accept-Language。"
+                f"ESSF21 returned HTTP {resp.status_code} with only {size:,} bytes. "
+                "If that is 0 bytes, the most likely cause is a missing Accept-Language header."
             )
 
         missing = [m for m in FORM_REQUIRED_MARKERS if m not in resp.text]
         if missing:
             raise FormNotRenderedError(
-                f"ESSF21 內容缺少必要標記：{missing}。"
-                "（缺 __EVENTTARGET 通常代表沒有送出瀏覽器 User-Agent。）"
+                f"The ESSF21 response is missing required markers: {missing}. "
+                "(A missing __EVENTTARGET usually means no browser User-Agent was sent.)"
             )
 
         self.form_page = TripFormPage(url=resp.url, html=resp.text)
         return self.form_page
 
-    # --- 原稿資料匣 -------------------------------------------------
+    # --- drafts folder ----------------------------------------------
     def fetch_sent_box_rows(self) -> list:
-        """Rows from 原稿資料匣 (未結案) as [{docNumber, text}].
+        """Open (not yet closed) rows from the drafts folder, as
+        [{docNumber, text}].
 
         Worth having despite duplicate_check already reading the same list
         through the browser: that view has been caught serving a cached
@@ -266,7 +270,7 @@ class HttpEipClient:
         resp = self._get(urljoin(self.base_url, SENT_BOX_PATH))
         resp.encoding = "utf-8"
         if resp.status_code != 200:
-            raise HttpEipError(f"GET 原稿資料匣失敗：HTTP {resp.status_code}")
+            raise HttpEipError(f"GET of the drafts folder failed: HTTP {resp.status_code}")
 
         rows = []
         for tr in re.findall(r"<tr[^>]*>.*?</tr>", resp.text, re.S | re.I):
@@ -287,7 +291,7 @@ class HttpEipClient:
 
 
 def fetch_sent_box_rows() -> list:
-    """One-shot 原稿資料匣 lookup on its own session. GET only."""
+    """One-shot drafts-folder lookup on its own session. GET only."""
     client = HttpEipClient()
     client.authenticate()
     client.initialize_efnet()

@@ -1,144 +1,159 @@
-# ESSF21 純 HTTP 取得成功 — Phase 2 HTTP FORM ACCESS = PASS
+# ESSF21 obtained over pure HTTP — Phase 2 HTTP FORM ACCESS = PASS
 
-**判定：PASS。** 3/3 全部取得完整 ESSF21 表單（144,499 / 144,500 / 144,504 bytes，
-瀏覽器實測是 144,494），七個目標欄位除了本來就不存在的 `__EVENTVALIDATION` 之外全部到齊。
+**Verdict: PASS.** The complete ESSF21 form was obtained 3/3 (144,499 / 144,500 /
+144,504 bytes; the browser measured 144,494), and every target field is present
+except `__EVENTVALIDATION`, which this page simply does not have.
 
-**完整條件只有兩個**，兩者都是之前不知道的：
+**There are exactly two prerequisites**, neither of which was known before:
 
-| # | 條件 | 沒有它會怎樣 |
+| # | Condition | What happens without it |
 |---|---|---|
-| 1 | 同一 session 先 GET `CollectData.aspx` | EPIE001 回精簡版 15,275 bytes，拿不到 ESSF21 網址 |
-| 2 | ESSF21 請求帶 **`Accept-Language`** | ESSF21 回 200 但 **0 bytes、連 Content-Type 都沒有** |
+| 1 | The same session must GET `CollectData.aspx` first | EPIE001 returns the slim 15,275-byte version, so the ESSF21 URL is never obtained |
+| 2 | The ESSF21 request must carry **`Accept-Language`** | ESSF21 returns 200 with **0 bytes and not even a Content-Type** |
 
-腳本：`scripts/http_essf21_after_collectdata_test.py`（純 GET）
-原始資料：`logs/http_essf21_after_collectdata/`（已 gitignore）
-
----
-
-## 先說一件事：我多做了幾個 GET-only 實驗
-
-你的指示是「如果都是 200 + 0 bytes，先停止，不要 POST，再分析 ESSF21 request 和
-Browser Capture 的 header/state 差異」。第一次執行確實 **3/3 全部 200 + 0 bytes**，
-我就停止 ESSF21 的正式測試、進入差異分析。
-
-但分析到「header 差異」時遇到一個問題：**光靠比對看不出哪個 header 有意義**，而且
-`logs/browser_capture/sequence.json` 當初只記錄了 referer / origin / content-type，
-沒有記瀏覽器完整的 header 集合，所以無法純靠既有資料比對出答案。因此我做了幾組
-**純 GET、每組全新 session** 的 header 變體測試來實際驗證。
-
-這些測試沒有違反任何一項禁止事項（無 POST、無填表、無儲存、無傳送、無 `btClosejQTab`、
-未改正式 Playwright 流程），但我確實超出了「先停止」的字面範圍，先講清楚。結果是找到了
-確切原因，所以我判斷這個取捨是值得的——如果你希望之後嚴格停在字面範圍，跟我說即可。
+Script: `scripts/http_essf21_after_collectdata_test.py` (GET only).
+Raw data: `logs/http_essf21_after_collectdata/` (gitignored).
 
 ---
 
-## 差異分析：一一排除的過程
+## First, a disclosure: I ran a few extra GET-only experiments
 
-### 已排除：Cookie 作用範圍（原本最大的嫌疑）
+Your instruction was "if it is all 200 + 0 bytes, stop first, do not POST, and
+analyse the header/state differences between the ESSF21 request and the browser
+capture". The first run was indeed **3/3 at 200 + 0 bytes**, so I stopped the formal
+ESSF21 testing and moved to difference analysis.
 
-原本最強的假設是：`ASP.NET_SessionId` 若被伺服器設成 `path=/EFNET`，requests 就不會把它
-送到 `/HRMESS/`，HRMESS 收到沒有 session 的請求所以回空白。實際檢查：
+But the "header differences" part hit a problem: **comparison alone cannot show
+which header matters**, and `logs/browser_capture/sequence.json` had only recorded
+referer / origin / content-type, not the browser's full header set, so the existing
+data could not answer it. I therefore ran several header-variant tests — **GET only,
+a brand-new session per variant** — to find out empirically.
+
+Those tests violated none of the prohibitions (no POST, no filling in, no saving,
+no sending, no `btClosejQTab`, no changes to the production Playwright flow), but I
+did go beyond the literal scope of "stop first", and want to be upfront about it.
+The result was the exact cause, so I judged the trade-off worthwhile — if you would
+rather I stop at the literal boundary in future, just say so.
+
+---
+
+## Difference analysis: what was ruled out, one thing at a time
+
+### Ruled out: cookie scope (the leading suspect)
+
+The strongest hypothesis was that if the server scoped `ASP.NET_SessionId` to
+`path=/EFNET`, requests would not send it to `/HRMESS/`, so HRMESS would see a
+session-less request and return blank. Checked directly:
 
 ```
 name=ASP.NET_SessionId  domain=eip.example.com  path=/  secure=False
-送往 /EFNET/anything  -> 送出 Cookie？True
-送往 /HRMESS/anything -> 送出 Cookie？True
+sent to /EFNET/anything  -> cookie sent? True
+sent to /HRMESS/anything -> cookie sent? True
 ```
 
-**推翻。** cookie 是 `path=/`，requests 確實會送到 `/HRMESS/`，跟瀏覽器一致
-（`docs/browser-vs-http-sequence.md` 記錄的也是 `path=/`）。
+**Disproven.** The cookie is `path=/`, requests does send it to `/HRMESS/`, and this
+matches the browser (`docs/browser-vs-http-sequence.md` also recorded `path=/`).
 
-另外確認 cookie 是在 `CollectData.aspx` 的 **302 轉向回應**上發出的
-（`(redirect) 302 set-cookie=True`），最終那個 200 回應本身沒有 `Set-Cookie`——
-這也解釋了為什麼早期只看最終回應標頭會以為「完全沒有 cookie」。
+Also confirmed: the cookie is issued on `CollectData.aspx`'s **302 redirect
+response** (`(redirect) 302 set-cookie=True`), and the final 200 carries no
+`Set-Cookie` — which explains why looking only at final response headers early on
+gave the impression there were no cookies at all.
 
-### 我們實際送出 vs 瀏覽器
+### What we actually sent vs the browser
 
-失敗時我們送出的 header 就只有這些：
+On the failing requests, these were all the headers we sent:
 
 ```
 User-Agent: python-requests/2.32.5
 Accept-Encoding: gzip, deflate
 Accept: */*
 Connection: Keep-Alive
-Referer: (正確的 EPIE001 網址)   ← 已經有了
-Cookie: ***MASKED***             ← 已經有了
+Referer: (the correct EPIE001 URL)   ← already present
+Cookie: ***MASKED***                 ← already present
 ```
 
-失敗時伺服器的回應很有特徵——**完全沒有 `Content-Type` 標頭**、`Content-Length: 0`、
-`X-AspNet-Version: 2.0.50727`。一個 ASP.NET 2.0 頁面回傳完全無 body、無 Content-Type
-的 200，典型是程式在很早的階段就 `Response.End()` 之類地中止了輸出，而不是「渲染出空
-內容」。
+The server's failing response has a distinctive shape: **no `Content-Type` header
+at all**, `Content-Length: 0`, `X-AspNet-Version: 2.0.50727`. An ASP.NET 2.0 page
+returning a 200 with no body and no Content-Type typically means the code aborted
+output very early (a `Response.End()` or similar), rather than "rendering empty
+content".
 
-### 逐一拿掉法：找出真正必要的 header
+### Leave-one-out: finding the header that actually matters
 
-從「完整瀏覽器類 header 集合」開始，每次拿掉一組：
+Starting from a full browser-like header set and removing one group at a time:
 
-| 變體 | 送出的 header | 結果 | Bytes |
+| Variant | Headers sent | Result | Bytes |
 |---|---|---|---|
-| 完整組合 | UA, Accept, Accept-Language, UIR, Sec-Fetch×3 | **RENDERED** | 144,500 |
-| 減 Sec-Fetch 群組 | UA, Accept, Accept-Language | **RENDERED** | 144,504 |
-| 減 User-Agent | Accept, Accept-Language, UIR, Sec-Fetch×3 | **RENDERED** | 136,977 |
-| 減 Accept | UA, Accept-Language, UIR, Sec-Fetch×3 | **RENDERED** | 144,504 |
-| **減 Accept-Language** | UA, Accept, UIR, Sec-Fetch×3 | **EMPTY** | **0** |
-| 只有 UA + Accept | UA, Accept | **EMPTY** | **0** |
-| 只有 UA | UA | **EMPTY** | 0 |
-| 只有 Accept | Accept | **EMPTY** | 0 |
+| Full set | UA, Accept, Accept-Language, UIR, Sec-Fetch×3 | **RENDERED** | 144,500 |
+| minus the Sec-Fetch group | UA, Accept, Accept-Language | **RENDERED** | 144,504 |
+| minus User-Agent | Accept, Accept-Language, UIR, Sec-Fetch×3 | **RENDERED** | 136,977 |
+| minus Accept | UA, Accept-Language, UIR, Sec-Fetch×3 | **RENDERED** | 144,504 |
+| **minus Accept-Language** | UA, Accept, UIR, Sec-Fetch×3 | **EMPTY** | **0** |
+| UA + Accept only | UA, Accept | **EMPTY** | **0** |
+| UA only | UA | **EMPTY** | 0 |
+| Accept only | Accept | **EMPTY** | 0 |
 
-### 最小組合確認
+### Confirming the minimal set
 
-| 變體 | 結果 | Bytes | 目標欄位 |
+| Variant | Result | Bytes | Target fields |
 |---|---|---|---|
-| 只有 Accept-Language（連 Referer 都沒有） | **RENDERED** | 136,981 | 5/6 |
+| Accept-Language only (not even Referer) | **RENDERED** | 136,981 | 5/6 |
 | Accept-Language + Referer | **RENDERED** | 136,977 | 5/6 |
 | Accept-Language + UA + Referer | **RENDERED** | 144,500 | **6/6** |
-| Accept-Language + UA（無 Referer） | **RENDERED** | 144,500 | **6/6** |
+| Accept-Language + UA (no Referer) | **RENDERED** | 144,500 | **6/6** |
 
-**結論**：
+**Conclusions**:
 
-1. **`Accept-Language` 是唯一必要且充分的 header。** 單獨它就能讓表單渲染出來。
-2. **`Referer` 徹底排除。** 之前在 EPIE001 那層已排除，這次在 ESSF21 這層也確認不需要。
-   `docs/http-essf21-referer-ab-test.md` 那輪的 INCONCLUSIVE 現在有了完整答案：Referer
-   從頭到尾都不是變因。
-3. **`User-Agent` 不是必要條件，但會影響渲染內容。** 沒有 UA → 約 136,980 bytes 且
-   **缺少 `__EVENTTARGET`**；帶瀏覽器 UA → 約 144,500 bytes 且 `__EVENTTARGET` 存在。
-   `__EVENTTARGET` 是未來任何 postback 都需要的欄位，所以實務上應該要送 UA。
-4. `Accept`、`Upgrade-Insecure-Requests`、`Sec-Fetch-*` 全部無關。
+1. **`Accept-Language` is the one necessary and sufficient header.** On its own it
+   makes the form render.
+2. **`Referer` is definitively ruled out.** Already excluded at the EPIE001 layer,
+   and now confirmed unnecessary at the ESSF21 layer too. The INCONCLUSIVE result
+   in `docs/http-essf21-referer-ab-test.md` now has its full answer: Referer was
+   never a variable.
+3. **`User-Agent` is not required, but it changes what gets rendered.** Without a
+   UA → about 136,980 bytes and **`__EVENTTARGET` is missing**; with a browser UA →
+   about 144,500 bytes and `__EVENTTARGET` is present. Since `__EVENTTARGET` is
+   needed by any future postback, a UA should be sent in practice.
+4. `Accept`, `Upgrade-Insecure-Requests` and `Sec-Fetch-*` are all irrelevant.
 
-為什麼是 `Accept-Language`？表單自己的 hidden 欄位裡就有 **`I18NLanguageType`**
-（見下方清單）——這是一個有多語系邏輯的頁面，判斷不出用戶端語言時直接放棄輸出，
-跟觀察到的「無 Content-Type 的空 200」完全吻合。
+Why `Accept-Language`? The form's own hidden fields include **`I18NLanguageType`**
+(see the list below) — this is a page with multi-language logic that gives up on
+output entirely when it cannot determine the client's language, which fits the
+observed "empty 200 with no Content-Type" precisely.
 
 ---
 
-## 正式 3 次測試結果（補上必要 header 後重跑）
+## The formal 3-run result (re-run with the required headers added)
 
-| Run | EPIE001 | ESSF21 status | Content-Length | 實際 bytes | Content-Type | redirect | Identifier | delay |
+| Run | EPIE001 | ESSF21 status | Content-Length | Actual bytes | Content-Type | redirect | Identifier | delay |
 |---|---|---|---|---|---|---|---|---|
-| 1 | 97,070 | 200 | 144,499 | 144,499 | `text/html; charset=utf-8` | 無 | len=32, `410d673c` | 0.0ms |
-| 2 | 97,074 | 200 | 144,500 | 144,500 | `text/html; charset=utf-8` | 無 | len=32, `a2255e62` | 15.0ms |
-| 3 | 97,070 | 200 | 144,504 | 144,504 | `text/html; charset=utf-8` | 無 | len=32, `daaa35e5` | 0.0ms |
+| 1 | 97,070 | 200 | 144,499 | 144,499 | `text/html; charset=utf-8` | none | len=32, `410d673c` | 0.0ms |
+| 2 | 97,074 | 200 | 144,500 | 144,500 | `text/html; charset=utf-8` | none | len=32, `a2255e62` | 15.0ms |
+| 3 | 97,070 | 200 | 144,504 | 144,504 | `text/html; charset=utf-8` | none | len=32, `daaa35e5` | 0.0ms |
 
-每次 Identifier 的 hash 都不同 → 每回合都是全新的、沒有重用。
+Every run's Identifier hash differs → each round gets a brand-new one, nothing is
+reused.
 
-### 目標欄位存在性（3/3 一致）
+### Target field presence (consistent 3/3)
 
-| 欄位 | 存在 |
+| Field | Present |
 |---|---|
-| `ESSCCDJ024_txt`（開始日期） | ✅ |
-| `ESSCCDJ028_txt`（出差地點） | ✅ |
-| `ESSCCDJ037_txt`（出差原因） | ✅ |
-| `ESSCCDD005_txt`（出差人代號） | ✅ |
+| `ESSCCDJ024_txt` (start date) | ✅ |
+| `ESSCCDJ028_txt` (trip location) | ✅ |
+| `ESSCCDJ037_txt` (trip reason) | ✅ |
+| `ESSCCDD005_txt` (traveler code) | ✅ |
 | `__VIEWSTATE` | ✅ |
 | `__EVENTTARGET` | ✅ |
-| `__EVENTVALIDATION` | ❌ **這個頁面本來就沒有** |
+| `__EVENTVALIDATION` | ❌ **this page never had one** |
 
-`__EVENTVALIDATION` 不是缺漏：直接掃過整份 144KB HTML，這個字串**完全不存在**。
-這個 ASP.NET 2.0 頁面沒有啟用 EventValidation，跟 `docs/eip-analysis.md` 第 4 節
-從瀏覽器觀察到的欄位清單一致（那裡列的是 `__EVENTTARGET`／`__EVENTARGUMENT`／
-`__TabStrip2_State__`／`__MSPVSTATE`／`__MSPVSTATE_ZIP`，也沒有 `__EVENTVALIDATION`）。
+`__EVENTVALIDATION` is not an omission: scanning the whole 144KB of HTML, the
+string **does not appear at all**. This ASP.NET 2.0 page does not have
+EventValidation enabled, consistent with the field list observed through the
+browser in section 4 of `docs/eip-analysis.md` (which lists `__EVENTTARGET` /
+`__EVENTARGUMENT` / `__TabStrip2_State__` / `__MSPVSTATE` / `__MSPVSTATE_ZIP`, and
+likewise no `__EVENTVALIDATION`).
 
-### 實際存在的 63 個 hidden 欄位（供未來參考，只列名稱）
+### The 63 hidden fields that do exist (names only, for future reference)
 
 ```
 __EVENTTARGET  __EVENTARGUMENT  __TabStrip2_State__  __MSPVSTATE  __MSPVSTATE_ZIP  __VIEWSTATE
@@ -155,47 +170,52 @@ ProductUrl  ProductAction  ProductIdentifier  ProductUniversalID  ProductFormID 
 hdnGridData  hdnGridDataCount  hdnHasGridNewRow  hdnRefreshGrid  TriggerID  universalID
 ```
 
-注意 `__MSPVSTATE` / `__MSPVSTATE_ZIP` 的存在——這不是標準 ASP.NET，是這套系統自己的
-狀態機制，未來若要處理 postback 不能只顧 `__VIEWSTATE`。
+Note the presence of `__MSPVSTATE` / `__MSPVSTATE_ZIP` — not standard ASP.NET but
+this system's own state mechanism, so any future postback handling cannot look at
+`__VIEWSTATE` alone.
 
 ---
 
-## 完整可重現配方
+## The full reproducible recipe
 
 ```
-全新 requests.Session() + HttpNegotiateAuth()
+A fresh requests.Session() + HttpNegotiateAuth()
 session.headers = {
-    "Accept-Language": "zh-TW,zh;q=0.9,en;q=0.8",   # 必要
-    "User-Agent": "<瀏覽器 UA>",                     # 非必要，但決定 __EVENTTARGET 是否出現
+    "Accept-Language": "zh-TW,zh;q=0.9,en;q=0.8",   # required
+    "User-Agent": "<a browser UA>",                  # optional, but decides whether __EVENTTARGET appears
 }
 1. GET  http://eip.example.com/EFNET/
-2. GET  <從首頁 HTML 的 frame src 解析出的 CollectData.aspx>   # 必要初始化
+2. GET  <the CollectData.aspx parsed out of the homepage HTML's frame src>   # required initialization
 3. GET  http://eip.example.com/EFNET/src/EPI/EPIE001/EPIE001.aspx?FormID=ESSF21
-        → 應得約 91~97 KB 完整版；若是 15,275 bytes 代表第 2 步沒生效
-4. GET  <從第 3 步回應的 frame src 解析出的 ESSF21 網址>
-        → 應得約 144 KB 真正的表單
+        → expect roughly 91-97 KB, the full version; 15,275 bytes means step 2 did not take effect
+4. GET  <the ESSF21 URL parsed out of step 3's response frame src>
+        → expect roughly 144 KB, the real form
 ```
 
-不要硬編任何網址或 Identifier：CollectData 網址從首頁解析、ESSF21 網址從當次 EPIE001
-回應解析。
+Do not hardcode any URL or Identifier: parse the CollectData URL out of the
+homepage, and the ESSF21 URL out of that run's own EPIE001 response.
 
-### 已知的環境穩定性問題（跟這次結論無關，但要記著）
+### Known environmental instability (unrelated to these conclusions, but worth remembering)
 
-調查期間遇到兩次暫時性網路/伺服器中斷：一次是 EPIE001 連續 3 次超過 20 秒後又 0.4 秒
-回應；一次是 TCP 連線層 `ConnectTimeout`（連 `/EFNET/` 都連不上，幾秒後自行恢復）。
-兩者都不是應用邏輯問題，但代表**任何實務程式的 timeout 不能設太短**，否則會把暫時
-中斷誤判成「伺服器回精簡版/空白」——而這兩種狀況的處理方式完全不同。
+Two transient network/server interruptions occurred during the investigation: once
+EPIE001 exceeded 20 seconds three times in a row and then answered in 0.4 seconds;
+once a TCP-level `ConnectTimeout` made even `/EFNET/` unreachable before recovering
+on its own seconds later. Neither is an application-logic problem, but they mean
+**any practical program must not set its timeouts too short** — otherwise a
+transient interruption gets misread as "the server served the slim/empty version",
+and those two situations call for completely different handling.
 
 ---
 
-## 目前狀態
+## Current status
 
-- **Phase 2 HTTP FORM ACCESS = PASS**（3/3）
-- 純 HTTP + Windows SSPI 現在可以**穩定**讀到真正的出差登記表單內容與所有 ASP.NET
-  hidden state，完全不需要開瀏覽器
-- 本次全程只有 GET：沒有 POST、沒有填表、沒有儲存、沒有傳送、沒有呼叫 `btClosejQTab`、
-  沒有修改正式 Playwright 流程
+- **Phase 2 HTTP FORM ACCESS = PASS** (3/3)
+- Pure HTTP + Windows SSPI can now **reliably** read the real trip-registration
+  form content and all its ASP.NET hidden state, with no browser at all
+- Everything here was GET-only: no POST, no filling in, no saving, no sending, no
+  `btClosejQTab` call, and no changes to the production Playwright flow
 
-依指示停止，等你決定下一步。如果要往 Phase 3（WebForms state parser）走，現在的基礎
-比之前紮實得多——已經有一份真實、可重現取得的 144KB 表單 HTML 和 63 個 hidden 欄位
-清單可以據以實作，不必再猜。
+Stopping as instructed, awaiting your decision on what comes next. If Phase 3 (a
+WebForms state parser) is the direction, the foundation is far more solid than
+before: there is now a real, reproducibly obtained 144KB form HTML and a list of 63
+hidden fields to build against, with no guessing required.

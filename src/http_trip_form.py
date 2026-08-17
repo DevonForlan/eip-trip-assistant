@@ -12,13 +12,13 @@ form and uses whatever `name` the HTML actually declares.
 
 Field shapes were verified against the real 144KB page, not assumed:
   ESSCCDJ024/025/026/027 are <input type="text">
-  ESSCCDJ028 (地點), ESSCCDJ037 (事由), ESSCCDJ029 (備註) are <textarea>
-  ESSCCDD005 (出差人代號) is <input type="text">
+  ESSCCDJ028 (location), ESSCCDJ037 (reason), ESSCCDJ029 (note) are <textarea>
+  ESSCCDD005 (traveler employee code) is <input type="text">
 A textarea's value is its text content, which is why the parser tracks
 that separately - reading a `value` attribute here would silently yield
 empty strings.
 
-Deliberately absent: any button field. ESSF21's 儲存 button renders as
+Deliberately absent: any button field. ESSF21's save button renders as
 `<input type="submit" name="GridUserControl1$Button9" disabled="disabled">`
 with a client-side validation chain and a companion
 `GridUserControl1$hdnBtnSaveEnabled` hidden field currently set to
@@ -84,8 +84,8 @@ class TripPayload:
 
 
 def note_with_transport(note: str, transport: str) -> str:
-    """ESSF21 has no transport field (the 彈性欄位 feature is disabled on
-    this tenant), so transport is folded into 備註.
+    """ESSF21 has no transport field (the tenant has extra/flexible fields
+    disabled), so transport is folded into the note field.
 
     Mirrors trip_form._note_with_transport in the Playwright track. The
     two are intentionally separate - importing that module here would drag
@@ -100,15 +100,18 @@ def _resolve(form_state, dom_id: str, logical: str):
     control = form_state.by_id(dom_id)
     if control is None:
         raise PayloadBuildError(
-            f"表單裡找不到欄位 {logical}（id={dom_id}）。"
-            "頁面可能已改版，請重新確認欄位對照表，不要繼續建立 payload。"
+            f"Field {logical} (id={dom_id}) is not present in the form. "
+            "The page may have changed - re-confirm the field mapping rather than "
+            "building a payload from it."
         )
     if not control.name:
-        raise PayloadBuildError(f"欄位 {logical}（id={dom_id}）沒有 name，無法送出。")
+        raise PayloadBuildError(
+            f"Field {logical} (id={dom_id}) has no name attribute, so it cannot be submitted."
+        )
     if control.disabled:
         raise PayloadBuildError(
-            f"欄位 {logical}（id={dom_id}）是 disabled，瀏覽器不會送出它，"
-            "強行加入會產生與真實操作不同的請求。"
+            f"Field {logical} (id={dom_id}) is disabled, so a browser would not submit "
+            "it; forcing it in would produce a request unlike any real interaction."
         )
     return control
 
@@ -162,8 +165,8 @@ def build_trip_payload(form_state, trip_request, action_url: str = None,
         new_value = values[logical]
         if not _override(fields, control.name, new_value):
             raise PayloadBuildError(
-                f"欄位 {logical}（name={control.name}）不在表單會送出的控制項清單中，"
-                "代表它被判定為不可送出，payload 會缺少這筆資料。"
+                f"Field {logical} (name={control.name}) is not among the form's "
+                "successful controls, so the payload would silently omit this value."
             )
         changes.append(
             FieldChange(

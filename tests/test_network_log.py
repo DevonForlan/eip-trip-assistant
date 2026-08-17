@@ -50,7 +50,7 @@ def test_post_field_names_never_includes_values():
 
 def test_recorder_captures_request_response_and_masks_field_values():
     page = FakePage()
-    recorder = NetworkRecorder("儲存")
+    recorder = NetworkRecorder("save")
     recorder.attach(page)
 
     req = FakeRequest("POST", "http://eip.example.com/EFNET/save", post_data="__VIEWSTATE=abc123&foo=bar")
@@ -69,7 +69,7 @@ def test_recorder_captures_request_response_and_masks_field_values():
 
 def test_recorder_flags_request_failures():
     page = FakePage()
-    recorder = NetworkRecorder("傳送")
+    recorder = NetworkRecorder("send")
     recorder.attach(page)
 
     req = FakeRequest("POST", "http://eip.example.com/EFNET/send", failure="net::ERR_ABORTED")

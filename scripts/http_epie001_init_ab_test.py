@@ -66,7 +66,7 @@ try:
     from dotenv import load_dotenv
     from requests_negotiate_sspi import HttpNegotiateAuth
 except ImportError as e:  # noqa: BLE001
-    print(f"[error] 缺少必要套件，請先執行 pip install -r requirements.txt（{e}）")
+    print(f"[error] Missing dependency - run: pip install -r requirements.txt ({e})")
     sys.exit(1)
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -105,17 +105,17 @@ EPIE001_MARKERS = ["framePlus", "ESSF21.aspx", "Identifier", "hdnplusFrameUrl"]
 
 # Each rung: (id, description, [init urls...], referer_for_epie001 or None)
 LADDER = [
-    ("S0", "Minimal（Experiment 1）：只 GET 首頁就打 EPIE001", [EFNET], None),
-    ("S1", "Experiment 2：首頁 → TreeMainFrame（直接打，跳過 CollectData）", [EFNET, TREE_MAIN_FRAME], None),
-    ("S2", "隔離 CollectData：首頁 → CollectData（自動轉往 TreeMainFrame）", [EFNET, COLLECT_DATA], None),
+    ("S0", "Minimal: homepage then straight to EPIE001", [EFNET], None),
+    ("S1", "homepage -> TreeMainFrame directly, skipping CollectData", [EFNET, TREE_MAIN_FRAME], None),
+    ("S2", "isolate CollectData: homepage -> CollectData (redirects to TreeMainFrame)", [EFNET, COLLECT_DATA], None),
     ("S3", "＋ tree", [EFNET, COLLECT_DATA, TREE], None),
-    ("S4", "＋ Marquee ＋ ShowStatus（＝當初 explorer 爬 frame 的範圍）",
+    ("S4", "+ Marquee + ShowStatus (the range the original explorer crawled)",
      [EFNET, COLLECT_DATA, TREE, MARQUEE, SHOW_STATUS], None),
-    ("S5", "＋ 裸 ESSF21（＝唯一成功過那次的完整重播）",
+    ("S5", "+ bare ESSF21 (a full replay of the one run that ever succeeded)",
      [EFNET, COLLECT_DATA, TREE, MARQUEE, SHOW_STATUS, BARE_ESSF21], None),
-    ("S6", "Experiment 3：Browser-like 完整初始化（無 Referer）",
+    ("S6", "browser-like full initialization, no Referer",
      [EFNET, COLLECT_DATA, TITLEBAR, TREE, MARQUEE, PLATFORM, MAIN, HOME_TAB, SHOW_STATUS], None),
-    ("S7", "Experiment 3：Browser-like 完整初始化 ＋ Referer=platform.aspx",
+    ("S7", "browser-like full initialization + Referer=platform.aspx",
      [EFNET, COLLECT_DATA, TITLEBAR, TREE, MARQUEE, PLATFORM, MAIN, HOME_TAB, SHOW_STATUS], EPIE001_REFERER),
 ]
 
@@ -179,7 +179,7 @@ def run_rung(rung_id: str, description: str, init_urls: list, referer: str | Non
             print(f"  [error] GET {step['short_url']} -> {step['error']}")
             result["outcome"] = "INIT_STEP_FAILED"
             return result
-        flag = "  <== 這一步產生了 SessionId" if (
+        flag = "  <== this step minted the SessionId" if (
             step["sessionid_present_after"] and not step["sessionid_present_before"]
         ) else ""
         print(f"  GET {step['short_url']:44s} {step['status']} {step['body_bytes']:>8,}B "
@@ -216,7 +216,7 @@ def run_rung(rung_id: str, description: str, init_urls: list, referer: str | Non
           f"sha256[:12]={digest12}")
     print(f"      markers: {markers}")
     print(f"      >>> {result['outcome']}"
-          f"{'  <<<<<< 完整版出現！' if is_full else '（精簡版）'}")
+          f"{'  <<<<<< full version!' if is_full else ' (slim version)'}")
     return result
 
 
@@ -238,13 +238,14 @@ def confirm_mode():
     """
     by_id = {r[0]: r for r in LADDER}
     order = ["S2", "S0", "S2", "S1", "S2"]
-    print("交錯重現測試（刻意從 S2 開始，用來排除「只是時間點剛好」這個可能）")
-    print(f"順序：{' → '.join(order)}\n")
+    print("Interleaved reproducibility check - deliberately starting with S2, so a\n"
+          "lucky moment in time cannot masquerade as a real cause")
+    print(f"Order: {' -> '.join(order)}\n")
 
     results = []
     for n, rung_id in enumerate(order, start=1):
         _, description, init_urls, referer = by_id[rung_id]
-        r = run_rung(f"{rung_id}#{n}", f"[重現測試 第{n}輪] {description}", init_urls, referer)
+        r = run_rung(f"{rung_id}#{n}", f"[repeat {n}] {description}", init_urls, referer)
         r["base_rung"] = rung_id
         results.append(r)
 
@@ -253,7 +254,7 @@ def confirm_mode():
         json.dumps(results, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
     )
 
-    print(f"\n{'=' * 70}\n重現測試總結\n{'=' * 70}")
+    print(f"\n{'=' * 70}\nReproducibility summary\n{'=' * 70}")
     print(f"{'#':3s} {'Rung':6s} {'Outcome':8s} {'Bytes':>10s}  sha256[:12]")
     for n, r in enumerate(results, start=1):
         e = r.get("epie001")
@@ -269,17 +270,19 @@ def confirm_mode():
 
     if s2_all_full and others_all_slim:
         verdict = "CONFIRMED_COLLECTDATA_IS_THE_TRIGGER"
-        msg = (f"S2（走 CollectData）{len(s2)}/{len(s2)} 全部完整版，"
-               f"S0/S1（沒走 CollectData）{len(others)}/{len(others)} 全部精簡版，"
-               "且順序刻意打亂 - CollectData.aspx 就是切換條件，不是時間點造成的。")
+        msg = (f"S2 (with CollectData) returned the full page {len(s2)}/{len(s2)} times, "
+               f"S0/S1 (without it) returned the slim page {len(others)}/{len(others)} "
+               "times, with the order deliberately shuffled - CollectData.aspx is the "
+               "trigger, not the moment in time.")
     elif s2_all_full:
         verdict = "PARTIAL"
-        msg = "S2 全部成功，但 S0/S1 不是全部精簡版，需要再看細節。"
+        msg = "Every S2 succeeded, but S0/S1 were not uniformly slim - needs a closer look."
     else:
         verdict = "NOT_REPRODUCIBLE"
-        msg = "S2 沒有穩定重現，先前那次成功可能仍受其他因素影響，不可下結論。"
+        msg = ("S2 did not reproduce reliably, so the earlier success may have depended "
+               "on something else. No conclusion.")
 
-    print(f"\n判定：{verdict}\n理由：{msg}")
+    print(f"\nVerdict: {verdict}\nReason : {msg}")
     (OUT_DIR / "confirm_verdict.json").write_text(
         json.dumps({"verdict": verdict, "explanation": msg, "order": order},
                    ensure_ascii=False, indent=2),
@@ -292,11 +295,12 @@ def main():
         confirm_mode()
         return
 
-    print("EPIE001 精簡版 vs 完整版：累積式全新 session 階梯測試")
-    print(f"完整版判定門檻：>= {FULL_VERSION_MIN_BYTES:,} bytes 且內容含 'ESSF21.aspx'")
-    print(f"已知：精簡版 = 15,275 bytes / 完整版 = 91,694~98,484 bytes")
-    print(f"每一階都是全新 session，且只在最後打一次 EPIE001（避免污染 server 狀態）")
-    print(f"輸出目錄（已 gitignore）= {OUT_DIR}")
+    print("EPIE001 slim vs full: cumulative fresh-session ladder")
+    print(f"Full-version threshold: >= {FULL_VERSION_MIN_BYTES:,} bytes and contains 'ESSF21.aspx'")
+    print("Known sizes: slim = 15,275 bytes / full = 91,694-98,484 bytes")
+    print("Every rung is a fresh session and hits EPIE001 exactly once, at the end,\n"
+          "so no rung can contaminate the next.")
+    print(f"Output directory (gitignored) = {OUT_DIR}")
 
     results = []
     stopped_at = None
@@ -305,8 +309,8 @@ def main():
         results.append(r)
         if r.get("outcome") == "FULL":
             stopped_at = rung_id
-            print(f"\n[stop] {rung_id} 已取得完整版 EPIE001 - 依指示停止，不再往下測試、"
-                  "也不會去 GET ESSF21。")
+            print(f"\n[stop] {rung_id} produced the full EPIE001 - stopping here. No "
+                  "further rungs, and no GET of ESSF21.")
             break
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -314,7 +318,7 @@ def main():
         json.dumps(results, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
     )
 
-    print(f"\n{'=' * 70}\n總結\n{'=' * 70}")
+    print(f"\n{'=' * 70}\nSummary\n{'=' * 70}")
     print(f"{'Rung':6s} {'Outcome':8s} {'Bytes':>10s}  {'sha256[:12]':14s} {'sid':4s} Referer")
     for r in results:
         e = r.get("epie001")
@@ -322,20 +326,21 @@ def main():
             print(f"{r['rung']:6s} {r.get('outcome', '?'):8s} {'-':>10s}  {'-':14s} {'-':4s} -")
             continue
         print(f"{r['rung']:6s} {r['outcome']:8s} {e['body_bytes']:>10,}  {e['sha256_prefix12']:14s} "
-              f"{'Y' if e['sessionid_present'] else 'N':4s} {'有' if e['referer_sent'] else '無'}")
+              f"{'Y' if e['sessionid_present'] else 'N':4s} {'yes' if e['referer_sent'] else 'no'}")
 
     hashes = {r["epie001"]["sha256_prefix12"] for r in results if r.get("epie001")}
-    print(f"\n不同的 EPIE001 回應 hash 數量：{len(hashes)}")
+    print(f"\nDistinct EPIE001 response hashes: {len(hashes)}")
     if len(hashes) == 1:
-        print("  -> 所有回應「位元組完全相同」，代表這些初始化步驟對 EPIE001 的輸出沒有任何影響，"
-              "\n     也代表我們這一連串 GET 並沒有在中途改變 server 狀態（否則回應會有差異）。")
+        print("  -> Every response was byte-identical, so none of these initialization\n"
+              "     steps affected EPIE001's output - and equally, this run of GETs did\n"
+              "     not change server state along the way (that would have shown up here).")
 
     sid_steps = []
     for r in results:
         for s in r["steps"]:
             if s.get("sessionid_present_after") and not s.get("sessionid_present_before"):
                 sid_steps.append((r["rung"], s["short_url"]))
-    print(f"\nASP.NET_SessionId 產生於：{sid_steps or '（本次沒觀察到產生時機）'}")
+    print(f"\nASP.NET_SessionId was minted at: {sid_steps or '(not observed this run)'}")
 
     verdict = {
         "stopped_at_full_version": stopped_at,
@@ -346,7 +351,7 @@ def main():
     (OUT_DIR / "verdict.json").write_text(
         json.dumps(verdict, ensure_ascii=False, indent=2), encoding="utf-8"
     )
-    print(f"\n結果已存到 {OUT_DIR / 'results.json'} / {OUT_DIR / 'verdict.json'}")
+    print(f"\nResults written to {OUT_DIR / 'results.json'} and {OUT_DIR / 'verdict.json'}")
 
 
 if __name__ == "__main__":

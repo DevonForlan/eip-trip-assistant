@@ -1,13 +1,13 @@
-"""Fill in and submit the EIP 出差登記 (ESSF21) form.
+"""Fill in and submit the EIP trip-registration (ESSF21) form.
 
 Field <-> id mapping was verified by hand in Phase 1, not guessed - see
 docs/eip-analysis.md section 8. This form has NO transport-method field
-(confirmed: the "彈性欄位" extra-field feature is disabled on this
-tenant - its button is literally `disabled` with onclick
-`alert('該作業尚未設定彈性欄位!')`), so trip.transport is folded into
-the 備註 (note) field instead.
+(confirmed: the extra/flexible-field feature is disabled on this
+tenant - its button is literally `disabled`, and its onclick only raises
+an alert saying the feature is not configured), so trip.transport is
+folded into the note field instead.
 
-submit_form() clicks a real, irreversible "傳送" button - only call it
+submit_form() clicks a real, irreversible Send button - only call it
 after the user has explicitly confirmed with `y` (see src/main.py).
 """
 import re
@@ -34,7 +34,7 @@ FIELD_IDS = {
     "note": "ESSCCDJ029_txt",
 }
 
-# 出差明細 grid - the "add a traveler" row. Verified by hand: the code
+# Traveler-detail grid - the "add a traveler" row. Verified by hand: the code
 # field's own onblur calls CheckPeoplePower(code) and clears itself if
 # invalid (see docs/eip-analysis.md section 9), so this fills the code
 # and lets the site's own JS resolve the name, rather than guessing at
@@ -44,32 +44,33 @@ DETAIL_PERSON_NAME_SELECTOR = "#ESSCCDD006_txt"
 DETAIL_SAVE_BUTTON_SELECTOR = "#GridUserControl1_Button9"
 
 REQUIRED_FIELD_LABELS = {
-    "start_date": "開始日期",
-    "start_time": "開始時間",
-    "end_date": "結束日期",
-    "end_time": "結束時間",
-    "location": "出差地點",
-    "reason": "出差原因",
+    "start_date": "start date",
+    "start_time": "start time",
+    "end_date": "end date",
+    "end_time": "end time",
+    "location": "location",
+    "reason": "reason",
 }
 
 # Verified by reading the button's `title` attribute (no click involved):
-# MasterPage_btnCreateToolSendForm -> title="傳送" (real submit).
-# MasterPage_btnCreateToolSaveForm -> title="草稿儲存" (draft save, unused here).
+# MasterPage_btnCreateToolSendForm -> the real Send button.
+# MasterPage_btnCreateToolSaveForm -> save-as-draft, unused here.
 SEND_BUTTON_SELECTOR = "#MasterPage_btnCreateToolSendForm"
 
-# 填單人 code - always auto-filled by EIP to the logged-in user, never
-# typed by us. Used as the default 出差人 (see get_filler_employee_code)
+# The filer's employee code - always auto-filled by EIP from the logged-in
+# user, never typed by us. Used as the default traveler (see
+# get_filler_employee_code)
 # since every real submission so far has the filer also be the
 # traveler - a general "who else is traveling" flow is future work, not
 # guessed at here.
 FILLER_CODE_FIELD_ID = "ESSCCDJ004_txt"
 
-DOC_NUMBER_FIELD_ID = "ESSCCDJ002_txt"  # 單號 - stays "AutoNumber" until a real send succeeds
+DOC_NUMBER_FIELD_ID = "ESSCCDJ002_txt"  # document number - stays "AutoNumber" until a send succeeds
 
 # Confirmed pattern from three successful live submissions (2026-08-11,
 # 2026-08-12, 2026-08-14) - a real send replaces the form view with an
 # approval workflow diagram headed by this exact text, e.g.
-# "單據:ESSF21 出差登記 (202601020001)". The number is a real, assigned
+# "單據:ESSF21 出差登記 (202601020001)" as rendered. The number is a real, assigned
 # document id, never "AutoNumber".
 DOCUMENT_NUMBER_PATTERN = re.compile(r"單據[:：]\s*ESSF21\s*出差登記\s*\((\d+)\)")
 
@@ -87,7 +88,7 @@ SUBMITTED_FRAME_URL_PATTERN = re.compile(r"SheetNo=(\d{6,})&ShowMode=ReadFormRea
 # only safe response to UNKNOWN is manual investigation.
 DEFAULT_VERIFY_TIMEOUT_MS = 30000
 
-# How long "form still on screen with 單號 = AutoNumber" must hold before it
+# How long "form still on screen with the document number = AutoNumber" must hold before it
 # counts as a failed send. Reporting FAILED on first sight would misjudge a
 # postback that is simply still in flight.
 FAILED_CONFIRM_SECONDS = 8
@@ -112,7 +113,9 @@ def _note_with_transport(trip: TripRequest) -> str:
 def _require_frame(page):
     frame = find_trip_form_frame(page)
     if frame is None:
-        raise RuntimeError("找不到出差登記表單的 frame，請先呼叫 eip_client.open_trip_form(page)。")
+        raise RuntimeError(
+            "Trip-registration form frame not found - call eip_client.open_trip_form(page) first."
+        )
     return frame
 
 
@@ -128,7 +131,7 @@ def fill_form(page, trip: TripRequest) -> None:
 
 
 def get_filler_employee_code(page) -> str:
-    """The 填單人 (form filler) employee code - always auto-filled by
+    """The filer's employee code - always auto-filled by
     EIP itself from the logged-in session, never typed by this tool."""
     frame = _require_frame(page)
     return frame.input_value(f"#{FILLER_CODE_FIELD_ID}")
@@ -150,9 +153,9 @@ class TravelerValidationError(RuntimeError):
 
 
 def add_traveler(page, employee_code: str) -> str:
-    """Fill the 出差人 code, let the site's own onblur validation
-    (CheckPeoplePower) resolve it, then click 儲存 to add this person
-    as a row in the 出差明細 grid. Returns the validated employee name.
+    """Fill the traveler code, let the site's own onblur validation
+    (CheckPeoplePower) resolve it, then click save to add this person as a
+    row in the traveler-detail grid. Returns the validated employee name.
 
     Raises TravelerValidationError if the code doesn't resolve to a
     real employee - the site clears both the code and name fields when
@@ -168,11 +171,12 @@ def add_traveler(page, employee_code: str) -> str:
     resolved_name = frame.input_value(DETAIL_PERSON_NAME_SELECTOR)
     if not resolved_code or not resolved_name:
         raise TravelerValidationError(
-            f"員工編號 {employee_code!r} 驗證失敗（欄位被清空），請確認編號是否正確。"
+            f"Employee code {employee_code!r} failed validation - the site cleared the "
+            "fields, which means it did not resolve to a real employee. Check the code."
         )
 
     dialog_recorder = DialogRecorder()
-    network_recorder = NetworkRecorder("儲存出差人明細")
+    network_recorder = NetworkRecorder("save traveler detail")
     dialog_recorder.attach(page)
     network_recorder.attach(page)
     try:
@@ -188,7 +192,7 @@ def add_traveler(page, employee_code: str) -> str:
 
 
 def submit_form(page) -> None:
-    """Clicks the real "傳送" (Send) button - a genuine, irreversible
+    """Clicks the real Send button - a genuine, irreversible
     submission into the approval workflow. Only ever call this after the
     user has explicitly confirmed with `y`. Never call this during
     development/testing.
@@ -201,10 +205,12 @@ def submit_form(page) -> None:
     """
     wrapper = find_trip_form_wrapper_frame(page)
     if wrapper is None:
-        raise RuntimeError("找不到表單外層 frame（EPIE001.aspx），無法送出。")
+        raise RuntimeError(
+            "Wrapper frame (EPIE001.aspx) not found - cannot submit."
+        )
 
     dialog_recorder = DialogRecorder()
-    network_recorder = NetworkRecorder("傳送出差登記")
+    network_recorder = NetworkRecorder("send trip registration")
     dialog_recorder.attach(page)
     network_recorder.attach(page)
     try:
@@ -258,7 +264,7 @@ def verify_submission(page, timeout_ms: int = DEFAULT_VERIFY_TIMEOUT_MS) -> tupl
     """Call right after submit_form(). Never infer success just from the
     form view going blank/disappearing on its own - that also happens
     when the session expires mid-postback (observed for real during
-    testing: a "儲存" click once led to a session-expired redirect, not
+    testing: a save click once led to a session-expired redirect, not
     a save, and the screen went blank exactly the same way a successful
     submission does).
 
@@ -266,14 +272,14 @@ def verify_submission(page, timeout_ms: int = DEFAULT_VERIFY_TIMEOUT_MS) -> tupl
     or DOCUMENT_NUMBER_PATTERN matches the rendered text. Both mean a real
     document number was assigned; the URL check is tried first because it
     becomes true earlier and does not depend on text having painted.
-    FAILED: the form frame is still present and 單號 is still
+    FAILED: the form frame is still present and the document number is still
     "AutoNumber" - the postback did not create a document.
     UNKNOWN: neither could be confirmed within timeout_ms (e.g. session
     expired mid-postback with no document number and no form frame
     either). Callers MUST NOT treat UNKNOWN as success, and MUST NOT
     auto-retry submit_form() on UNKNOWN - see H (duplicate protection):
     check for an existing matching submission first. Note that the
-    browser's own 表單追蹤處理 list has been seen to serve a cached page
+    browser's own form-tracking list has been seen to serve a cached page
     that omitted a just-created document, so for an UNKNOWN result prefer
     an independent HTTP query of sentBox.aspx (src/http_eip_client.py).
     """
@@ -283,18 +289,19 @@ def verify_submission(page, timeout_ms: int = DEFAULT_VERIFY_TIMEOUT_MS) -> tupl
         if check_session(page) == SessionState.EXPIRED:
             return (
                 SubmissionResult.UNKNOWN,
-                "送出過程中偵測到 session 已過期，無法確認這次送出是否成功，"
-                "請重新登入後用「表單追蹤處理」查詢是否已產生單據，切勿直接重送。",
+                "The session expired mid-send, so whether it succeeded cannot be "
+                "determined. Log back in and check the form-tracking drafts folder for a "
+                "new document before doing anything else. Do not resend.",
             )
 
         submitted_doc_no = _submitted_document_number_from_frames(page)
         if submitted_doc_no:
-            return SubmissionResult.SUCCESS, f"單據編號：{submitted_doc_no}"
+            return SubmissionResult.SUCCESS, f"Document number: {submitted_doc_no}"
 
         text = _all_frame_text(page)
         match = DOCUMENT_NUMBER_PATTERN.search(text)
         if match:
-            return SubmissionResult.SUCCESS, f"單據編號：{match.group(1)}"
+            return SubmissionResult.SUCCESS, f"Document number: {match.group(1)}"
 
         frame = find_trip_form_frame(page)
         if frame is None:
@@ -309,7 +316,7 @@ def verify_submission(page, timeout_ms: int = DEFAULT_VERIFY_TIMEOUT_MS) -> tupl
 
         if field_doc_no == "AutoNumber":
             # Do NOT conclude failure on first sight: immediately after the
-            # click the old form is still on screen with 單號 unchanged
+            # click the old form is still on screen with its document number unchanged
             # while the postback is in flight, so an instant verdict here
             # would report FAILED for a send that is merely slow. Require
             # the state to persist first.
@@ -318,8 +325,9 @@ def verify_submission(page, timeout_ms: int = DEFAULT_VERIFY_TIMEOUT_MS) -> tupl
             elif time.time() - unchanged_since >= FAILED_CONFIRM_SECONDS:
                 return (
                     SubmissionResult.FAILED,
-                    f"表單仍在畫面上、單號仍為 AutoNumber，且持續超過 "
-                    f"{FAILED_CONFIRM_SECONDS} 秒，這次送出沒有成功。",
+                    "The form is still on screen with its document number still "
+                    f"AutoNumber, and has been for over {FAILED_CONFIRM_SECONDS}s - "
+                    "this send did not succeed.",
                 )
         else:
             unchanged_since = None
@@ -328,7 +336,7 @@ def verify_submission(page, timeout_ms: int = DEFAULT_VERIFY_TIMEOUT_MS) -> tupl
 
     return (
         SubmissionResult.UNKNOWN,
-        "逾時仍無法確認送出結果，請人工檢查畫面，切勿直接重送。"
-        "建議用獨立的 HTTP 查詢（src/http_eip_client.py）確認原稿資料匣，"
-        "瀏覽器畫面上的清單可能是快取的舊資料。",
+        "Timed out without determining the outcome. Check the screen by hand and do "
+        "not resend. Prefer an independent HTTP query of the drafts folder "
+        "(src/http_eip_client.py) - the list shown in the browser may be cached.",
     )

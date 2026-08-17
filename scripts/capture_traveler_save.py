@@ -1,4 +1,5 @@
-"""Phase 3B: capture browser ground truth for 儲存出差人 (GridUserControl1$Button9).
+"""Capture browser ground truth for the save-traveler action
+(GridUserControl1$Button9).
 
 Answers, from observation rather than inference, what happens between
 "ESSF21 is loaded" and "the traveler-save postback has completed":
@@ -15,7 +16,7 @@ so the click is allowed exactly once:
   - Nothing here retries anything, on any outcome, including UNKNOWN.
 
 Explicitly NOT done here: no MasterPage_btnCreateToolSendForm, no final
-送出, no draft send, no btClosejQTab, no requests.post, no HTTP replay of
+send, no draft save, no btClosejQTab, no requests.post, no HTTP replay of
 anything captured. src/ is read from but never modified.
 
 Header fields are filled with obvious test data before the traveler code
@@ -72,8 +73,8 @@ TEST_HEADER = {
     "ESSCCDJ025_txt": "09:00",
     "ESSCCDJ026_txt": "2026/01/01",
     "ESSCCDJ027_txt": "18:30",
-    "ESSCCDJ028_txt": "測試地點",
-    "ESSCCDJ037_txt": "測試事由",
+    "ESSCCDJ028_txt": "Sample location",
+    "ESSCCDJ037_txt": "Sample reason",
 }
 
 WATCH_FIELDS = [
@@ -206,17 +207,17 @@ def diff_snapshots(a: dict, b: dict) -> list:
     for key in sorted(set(ia) | set(ib)):
         ca, cb = ia.get(key), ib.get(key)
         if ca is None:
-            changes.append({"key": key, "change": "新增", "after": cb})
+            changes.append({"key": key, "change": "added", "after": cb})
             continue
         if cb is None:
-            changes.append({"key": key, "change": "消失", "before": ca})
+            changes.append({"key": key, "change": "removed", "before": ca})
             continue
         deltas = {}
         for field in ("disabled", "checked", "value_length"):
             if ca.get(field) != cb.get(field):
                 deltas[field] = {"before": ca.get(field), "after": cb.get(field)}
         if deltas:
-            changes.append({"key": key, "name": cb["name"], "id": cb["id"], "change": "修改", "deltas": deltas})
+            changes.append({"key": key, "name": cb["name"], "id": cb["id"], "change": "modified", "deltas": deltas})
     return changes
 
 
@@ -264,11 +265,11 @@ class SaveCaptureRecorder:
     @staticmethod
     def _summarize_post(body, headers) -> dict:
         if body is None:
-            return {"parsed": False, "reason": "post_data 無法取得"}
+            return {"parsed": False, "reason": "post_data unavailable"}
         try:
             pairs = parse_qsl(body, keep_blank_values=True)
         except Exception:  # noqa: BLE001
-            return {"parsed": False, "reason": "無法解析為 form-encoded", "body_length": len(body)}
+            return {"parsed": False, "reason": "not parseable as form-encoded", "body_length": len(body)}
         fields = []
         for name, value in pairs:
             item = {"name": name, "value_length": len(value)}
@@ -399,13 +400,15 @@ def _wait_for_postback(page, recorder, before_post_count, timeout_s=45) -> bool:
 
 
 def main():
-    print("=== Phase 3B：儲存出差人 Browser Ground Truth 捕捉 ===")
-    print("這個腳本只會按一次「儲存出差人」，不會送出出差申請單。\n")
+    print("=== Capturing browser ground truth for the save-traveler action ===")
+    print("This clicks save exactly once. It never submits the trip application.\n")
 
     if MARKER.exists():
-        print(f"[stop] 偵測到執行記錄：{MARKER}")
-        print("「儲存出差人」會改變草稿的伺服器狀態，依指示只能執行一次。")
-        print("若確定要重新捕捉（會再新增一列出差人明細），請人工刪除上述檔案後再執行。")
+        print(f"[stop] Found a previous-run marker: {MARKER}")
+        print("Saving a traveler mutates the draft's server-side state, so this is "
+              "allowed exactly once.")
+        print("To capture again - which adds another traveler row - delete that file "
+              "by hand first.")
         return 1
 
     results = {}
@@ -419,15 +422,16 @@ def main():
 
         page = eip_client.open_homepage(context)
         state = check_session(page)
-        print(f"登入狀態：{state.value}")
+        print(f"Session state: {state.value}")
         if state != SessionState.AUTHENTICATED:
-            print("[stop] 不是 AUTHENTICATED，請先登入後再執行。")
+            print("[stop] Not AUTHENTICATED - log in first.")
             return 1
 
         if eip_client.find_trip_form_frame(page) is not None:
-            print("[stop] 目前已經有開啟中的出差登記表單。")
-            print("為了確保捕捉到的是全新、未被動過的表單（這是一次性操作，狀態必須乾淨），")
-            print("請先關閉該分頁籤或重新整理 EIP 首頁，再重新執行本腳本。")
+            print("[stop] A trip-registration form is already open.")
+            print("This is a one-shot capture, so the form must be brand new and "
+                  "untouched.")
+            print("Close that tab or reload the EIP homepage, then run this again.")
             return 1
 
         recorder = SaveCaptureRecorder().attach(page)
@@ -435,22 +439,23 @@ def main():
 
         try:
             # --- open a fresh form ---------------------------------
-            print("\n[1] 開啟全新的出差登記表單...")
+            print("\n[1] Opening a fresh trip-registration form...")
             eip_client.open_trip_form(page)
             frame = eip_client.find_trip_form_frame(page)
             if frame is None:
-                print("[stop] 找不到 ESSF21 frame。")
+                print("[stop] ESSF21 frame not found.")
                 return 1
             page.wait_for_timeout(1500)
-            print(f"    表單已載入，raw HTML 是否捕捉到："
-                  f"{'是' if recorder.essf21_raw_html else '否'}")
+            print(f"    Form loaded. Raw HTML captured: "
+                  f"{bool(recorder.essf21_raw_html)}")
 
             # --- SNAPSHOT A: pristine ------------------------------
-            print("\n[2] 快照 A：JS 執行後、任何輸入之前的 DOM（用來對比 raw HTML）")
+            print("\n[2] Snapshot A: the DOM after JS ran but before any input - the "
+                  "baseline for comparing against the raw HTML")
             snap_a = snapshot(frame, "A_pristine_dom")
             results["snapshot_a_pristine"] = snap_a
-            print(f"    具名控制項 {counts_of(snap_a)['named_controls']} 個，"
-                  f"FormData 欄位 {counts_of(snap_a)['form_data_fields']} 個")
+            print(f"    named controls: {counts_of(snap_a)['named_controls']}, "
+                  f"FormData fields: {counts_of(snap_a)['form_data_fields']}")
 
             raw_form = None
             if recorder.essf21_raw_html:
@@ -461,7 +466,7 @@ def main():
                                                          encoding="utf-8", errors="replace")
                 print(f"    raw HTML successful controls：{raw_form.counts()['successful_controls']}")
 
-                print("\n    --- raw HTML vs Browser DOM（checkbox 專項）---")
+                print("\n    --- raw HTML vs browser DOM (checkboxes specifically) ---")
                 cmp_rows = []
                 for cb_id, cb_name in (("ESSCCDJ023_chk", "ESSCCDJ023$chk"),
                                        ("ESSCCDJ023_1_chk", "ESSCCDJ023_1$chk"),
@@ -478,23 +483,25 @@ def main():
                     cmp_rows.append(row)
                     print(f"      {cb_id:20s} raw={row['raw_html_checked']}  "
                           f"DOM={row['browser_dom_checked']}  "
-                          f"{'*** 不一致 ***' if row['differs'] else '一致'}")
+                          f"{'*** MISMATCH ***' if row['differs'] else 'match'}")
                 results["checkbox_raw_vs_dom"] = cmp_rows
 
             # --- fill header ---------------------------------------
-            print("\n[3] 填入表頭測試資料（避免唯一一次點擊被驗證擋下）")
+            print("\n[3] Filling header fields with test data, so the single allowed "
+                  "click is not spent on a validation alert")
             for fid, val in TEST_HEADER.items():
                 try:
                     frame.fill(f"#{fid}", val)
                 except Exception as e:  # noqa: BLE001
-                    print(f"    [warn] 填入 {fid} 失敗：{e}")
+                    print(f"    [warn] Could not fill {fid}: {e}")
             page.wait_for_timeout(800)
             snap_a2 = snapshot(frame, "A2_header_filled")
             results["snapshot_a2_header_filled"] = snap_a2
 
             # --- enter traveler code -------------------------------
             filler_code = frame.input_value(f"#{FILLER_CODE_ID}")
-            print(f"\n[4] 輸入出差人代號（使用登入者自己的員工編號，長度 {len(filler_code)}）")
+            print(f"\n[4] Entering the traveler code - the logged-in user's own employee "
+                  f"code, length {len(filler_code)}")
             posts_before_validation = len(recorder.posts)
             ajax_before = len(recorder.ajax_events())
 
@@ -504,29 +511,29 @@ def main():
             page.wait_for_timeout(2500)  # let onblur / CheckPeoplePower finish
 
             resolved_name = frame.input_value(f"#{TRAVELER_NAME_ID}")
-            print(f"    驗證後姓名欄位長度：{len(resolved_name)}"
-                  f"（{'已解析出姓名' if resolved_name else '空白 - 驗證可能失敗'}）")
+            print(f"    resolved name length after validation: {len(resolved_name)} "
+                  f"({'name resolved' if resolved_name else 'empty - validation may have failed'})")
 
             ajax_during = recorder.ajax_events()[ajax_before:]
             results["validation_ajax"] = ajax_during
-            print(f"    驗證期間的 XHR/AJAX/ashx 請求：{len(ajax_during)} 筆")
+            print(f"    XHR/AJAX/ashx requests during validation: {len(ajax_during)}")
             for e in ajax_during:
                 print(f"      {e['method']} {e['url']}  type={e['resource_type']}"
                       f"  content-type={e['content_type']}")
             new_posts = recorder.posts[posts_before_validation:]
             results["validation_posts"] = new_posts
-            print(f"    驗證期間的 POST 請求：{len(new_posts)} 筆"
-                  f"{'（代表 AJAX 可能建立/改變 server 狀態）' if new_posts else ''}")
+            print(f"    POST requests during validation: {len(new_posts)}"
+                  f"{' - so the AJAX may create or change server state' if new_posts else ''}")
 
             # --- SNAPSHOT B ----------------------------------------
-            print("\n[5] 快照 B：驗證完成後")
+            print("\n[5] Snapshot B: after validation completed")
             snap_b = snapshot(frame, "B_after_validation")
             results["snapshot_b_after_validation"] = snap_b
             changes = diff_snapshots(snap_a2, snap_b)
             results["diff_a2_to_b"] = changes
-            print(f"    相對於快照 A2，被 JavaScript 改動的控制項：{len(changes)} 個")
+            print(f"    controls JavaScript changed since snapshot A2: {len(changes)}")
             for ch in changes[:40]:
-                if ch["change"] == "修改":
+                if ch["change"] == "modified":
                     print(f"      {ch['name']} (id={ch['id']}): {ch['deltas']}")
                 else:
                     print(f"      {ch['change']}: {ch['key']}")
@@ -536,17 +543,18 @@ def main():
             en_a2 = snap_a2["watched"].get("GridUserControl1$hdnBtnSaveEnabled")
             en_b = snap_b["watched"].get("GridUserControl1$hdnBtnSaveEnabled")
             print(f"\n    Button9 disabled: {btn_a2 and btn_a2['disabled']} -> {btn_b and btn_b['disabled']}")
-            print(f"    hdnBtnSaveEnabled 指紋: "
+            print(f"    hdnBtnSaveEnabled fingerprint: "
                   f"{en_a2 and en_a2['fnv1a32']} -> {en_b and en_b['fnv1a32']}"
-                  f"  (長度 {en_a2 and en_a2['length']} -> {en_b and en_b['length']})")
+                  f"  (length {en_a2 and en_a2['length']} -> {en_b and en_b['length']})")
 
             # --- SNAPSHOT C: final pre-click ------------------------
-            print("\n[6] 快照 C：按下按鈕前最後一瞬間（以瀏覽器自己的 FormData 為準）")
+            print("\n[6] Snapshot C: the last instant before clicking, using the "
+                  "browser's own FormData")
             snap_c = snapshot(frame, "C_final_pre_click")
             results["snapshot_c_pre_click"] = snap_c
             c_counts = counts_of(snap_c)
-            print(f"    FormData successful controls：{c_counts['form_data_fields']} 個")
-            print(f"    具名控制項 {c_counts['named_controls']}，disabled {c_counts['disabled']}，"
+            print(f"    FormData successful controls: {c_counts['form_data_fields']}")
+            print(f"    named {c_counts['named_controls']}, disabled {c_counts['disabled']}, "
                   f"checked {c_counts['checked']}")
 
             if raw_form is not None:
@@ -558,60 +566,63 @@ def main():
                     "only_in_raw": sorted(set(raw_names) - set(dom_names)),
                     "only_in_dom": sorted(set(dom_names) - set(raw_names)),
                 }
-                print(f"    對比 Phase 3A raw HTML payload：raw {len(raw_names)} vs DOM {len(dom_names)}")
-                print(f"      只在 raw：{sorted(set(raw_names) - set(dom_names))}")
-                print(f"      只在 DOM：{sorted(set(dom_names) - set(raw_names))}")
+                print(f"    vs the raw-HTML payload: raw {len(raw_names)} vs DOM {len(dom_names)}")
+                print(f"      only in raw: {sorted(set(raw_names) - set(dom_names))}")
+                print(f"      only in DOM: {sorted(set(dom_names) - set(raw_names))}")
 
             btn_state = snap_c["watched"].get(SAVE_BUTTON_NAME)
             if btn_state and btn_state["disabled"]:
-                print("\n[stop] 儲存按鈕仍是 disabled，按下去不會有作用。")
-                print("為避免浪費唯一一次點擊機會，這裡停止，不會點擊。")
+                print("\n[stop] The save button is still disabled, so clicking it would "
+                      "do nothing.")
+                print("Stopping without clicking, so the single allowed click is not wasted.")
                 _save("results_partial.json", results)
                 return 1
 
             # --- THE ONE CLICK --------------------------------------
             OUT_DIR.mkdir(parents=True, exist_ok=True)
             MARKER.write_text(
-                f"儲存出差人已於 {time.strftime('%Y-%m-%d %H:%M:%S')} 執行過一次。\n"
-                "這個檔案在點擊之前就寫入，確保即使點擊過程當掉也不會被重跑。\n"
-                "要重新捕捉必須人工刪除本檔案，並理解那會再新增一列出差人明細。\n",
+                f"Save-traveler was executed once at {time.strftime('%Y-%m-%d %H:%M:%S')}.\n"
+                "This file is written BEFORE the click, so a crash mid-click still cannot\n"
+                "leave the script re-runnable.\n"
+                "Capturing again requires deleting this file by hand, and understanding\n"
+                "that it will add another traveler row.\n",
                 encoding="utf-8",
             )
-            print("\n[7] *** 執行唯一一次「儲存出差人」點擊 ***")
+            print("\n[7] *** Performing the single allowed save-traveler click ***")
             posts_before = len(recorder.posts)
             frame.click(f"#{SAVE_BUTTON_ID}", timeout=10000)
 
             ok = _wait_for_postback(page, recorder, posts_before, timeout_s=45)
-            print(f"    是否收到 POST 回應：{'是' if ok else '否（逾時）'}")
+            print(f"    POST response received: {'yes' if ok else 'no (timed out)'}")
 
             # --- POST body ------------------------------------------
             save_posts = recorder.posts[posts_before:]
             results["save_posts"] = save_posts
-            print(f"\n[8] 捕捉到的 POST 請求：{len(save_posts)} 筆")
+            print(f"\n[8] POST requests captured: {len(save_posts)}")
             for p in save_posts:
                 post = p.get("post", {})
                 print(f"    {p['method']} {p['url']}")
                 print(f"      Content-Type: {post.get('content_type')}")
                 print(f"      Content-Length: {post.get('content_length_header')}"
-                      f"  body 實際長度: {post.get('body_length')}")
-                print(f"      欄位數: {post.get('field_count')}")
+                      f"  actual body length: {post.get('body_length')}")
+                print(f"      field count: {post.get('field_count')}")
                 if post.get("parsed"):
                     interesting = {f["name"]: f for f in post["fields"] if f["name"] in WATCH_FIELDS}
-                    print("      重點欄位：")
+                    print("      fields of interest:")
                     for name in WATCH_FIELDS:
                         f = interesting.get(name)
                         if f is None:
-                            print(f"        {name:38s} 不在 POST body 中")
+                            print(f"        {name:38s} not in the POST body")
                         elif "value" in f:
                             print(f"        {name:38s} value={f['value']!r} (len={f['value_length']})")
                         else:
                             print(f"        {name:38s} len={f['value_length']} fnv={f.get('fnv1a32')}")
 
             # --- SNAPSHOT D -----------------------------------------
-            print("\n[9] 快照 D：POST 完成後")
+            print("\n[9] Snapshot D: after the POST completed")
             frame = eip_client.find_trip_form_frame(page)
             if frame is None:
-                print("    [warn] POST 後找不到 ESSF21 frame，無法取得快照 D。")
+                print("    [warn] No ESSF21 frame after the POST, so snapshot D is unavailable.")
                 results["snapshot_d_after_post"] = None
             else:
                 snap_d = snapshot(frame, "D_after_post")
@@ -623,13 +634,13 @@ def main():
                     if b and d:
                         changed = b["fnv1a32"] != d["fnv1a32"]
                         print(f"    {name:38s} len {b['length']} -> {d['length']}  "
-                              f"{'*** 已改變 ***' if changed else '未改變'}")
-                print(f"\n    grid 列數變化：")
+                              f"{'*** CHANGED ***' if changed else 'unchanged'}")
+                print("\n    grid row-count changes:")
                 gb = {g["id"]: g["row_count"] for g in snap_c.get("grids", [])}
                 gd = {g["id"]: g["row_count"] for g in snap_d.get("grids", [])}
                 for gid in sorted(set(gb) | set(gd)):
                     before, after = gb.get(gid), gd.get(gid)
-                    mark = " <== 新增列" if (before is not None and after is not None and after > before) else ""
+                    mark = " <== row added" if (before is not None and after is not None and after > before) else ""
                     print(f"      {gid}: {before} -> {after}{mark}")
                 results["grid_before"] = gb
                 results["grid_after"] = gd
@@ -639,7 +650,7 @@ def main():
                 for d in dialogs.events
             ]
             if dialogs.events:
-                print(f"\n    捕捉到 {len(dialogs.events)} 個對話框：")
+                print(f"\n    dialogs captured: {len(dialogs.events)}")
                 for d in dialogs.events:
                     print(f"      [{d.dialog_type}] {d.action}: {d.message}")
 
@@ -648,9 +659,9 @@ def main():
             recorder.detach()
             results["all_events"] = recorder.events
             _save("results.json", results)
-            print(f"\n完整結果已存到 {OUT_DIR / 'results.json'}")
+            print(f"\nFull results written to {OUT_DIR / 'results.json'}")
 
-    print("\n=== 完成。沒有送出出差申請單，沒有執行任何 HTTP POST replay。 ===")
+    print("\n=== Done. No trip application was submitted, and no HTTP POST was replayed. ===")
     return 0
 
 

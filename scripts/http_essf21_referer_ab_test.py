@@ -50,7 +50,7 @@ try:
     from dotenv import load_dotenv
     from requests_negotiate_sspi import HttpNegotiateAuth
 except ImportError as e:  # noqa: BLE001
-    print(f"[error] 缺少必要套件，請先執行 pip install -r requirements.txt（{e}）")
+    print(f"[error] Missing dependency - run: pip install -r requirements.txt ({e})")
     sys.exit(1)
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -127,7 +127,7 @@ def _save_text(name: str, text: str) -> None:
 
 def run_single(label: str, use_referer: bool, run_index: int) -> dict:
     tag = f"{label}{run_index}"
-    print(f"\n--- Run {tag}（Referer={'有' if use_referer else '無'}）---")
+    print(f"\n--- Run {tag} (Referer: {'yes' if use_referer else 'no'}) ---")
 
     result = {
         "run_label": label,
@@ -143,7 +143,7 @@ def run_single(label: str, use_referer: bool, run_index: int) -> dict:
         r_efnet = session.get(EIP_URL, timeout=TIMEOUT_SECONDS)
         result["efnet_status"] = r_efnet.status_code
     except requests.RequestException as e:
-        result["error"] = f"GET EFNET 失敗：{e}"
+        result["error"] = f"GET of EFNET failed: {e}"
         print(f"  [error] {result['error']}")
         return result
 
@@ -152,7 +152,7 @@ def run_single(label: str, use_referer: bool, run_index: int) -> dict:
         r_epie001 = session.get(EPIE001_URL, timeout=TIMEOUT_SECONDS)
         t_epie001_end = time.monotonic()
     except requests.RequestException as e:
-        result["error"] = f"GET EPIE001 失敗：{e}"
+        result["error"] = f"GET of EPIE001 failed: {e}"
         print(f"  [error] {result['error']}")
         return result
 
@@ -164,8 +164,9 @@ def run_single(label: str, use_referer: bool, run_index: int) -> dict:
     if essf21_url is None:
         result["essf21_url_found"] = False
         result["outcome"] = "EPIE001_NO_FRAME"
-        print("  [warn] 這次 EPIE001 回應裡沒有找到 ESSF21 的 <frame> 標籤"
-              "（跟 http-webforms-poc.md 觀察到的精簡版回應一致），這次沒有網址可以測試 Referer，跳過。")
+        print("  [warn] This EPIE001 response has no ESSF21 <frame> tag (the same slim "
+              "response documented in http-webforms-poc.md), so there is no URL to "
+              "test Referer against. Skipping this run.")
         return result
 
     result["essf21_url_found"] = True
@@ -181,7 +182,7 @@ def run_single(label: str, use_referer: bool, run_index: int) -> dict:
     try:
         r_essf21 = session.get(essf21_url, timeout=TIMEOUT_SECONDS, headers=headers, allow_redirects=True)
     except requests.RequestException as e:
-        result["error"] = f"GET ESSF21 失敗：{e}"
+        result["error"] = f"GET of ESSF21 failed: {e}"
         print(f"  [error] {result['error']}")
         return result
 
@@ -240,24 +241,40 @@ def _classify(results: list) -> tuple:
     }
 
     if len(a_runs) < 2 or len(b_runs) < 2:
-        return "INCONCLUSIVE", counts, "A 或 B 這組能實際測試 Referer 的次數不足 2 次（EPIE001 太多次沒給出 ESSF21 網址），樣本不足以下結論。"
+        return "INCONCLUSIVE", counts, (
+            "Fewer than 2 runs in group A or B actually got as far as testing Referer "
+            "(EPIE001 too often returned no ESSF21 URL). Not enough data to conclude."
+        )
 
     if a_empty >= 2 and a_success == 0 and b_success >= 2 and b_empty == 0:
-        return "REFERER_LIKELY_NECESSARY", counts, "A（無 Referer）穩定得到空 body，B（有 Referer）穩定成功 - Referer 為必要條件的可信度高。"
+        return "REFERER_LIKELY_NECESSARY", counts, (
+            "A (no Referer) consistently returned an empty body while B (with Referer) "
+            "consistently succeeded - strong evidence that Referer is required."
+        )
 
     if a_success >= 2 and b_success >= 2:
-        return "REFERER_NOT_NECESSARY", counts, "A、B 都能成功，代表先前 requests 版本的失敗更可能跟 Identifier 過期/session 狀態/時序有關，可以排除 Referer。"
+        return "REFERER_NOT_NECESSARY", counts, (
+            "Both A and B succeeded, so the earlier requests-based failures are more "
+            "likely about a stale Identifier, session state or timing. Referer is ruled out."
+        )
 
     if a_success == 0 and b_success == 0:
-        return "BOTH_FAILED", counts, "A、B 都沒有成功案例，代表 Referer 不是（唯一）關鍵，需要往下一層做 Header 逐項比對，這次先不動手。"
+        return "BOTH_FAILED", counts, (
+            "Neither A nor B ever succeeded, so Referer is not the (only) factor. "
+            "The next step is a header-by-header comparison - not attempted here."
+        )
 
-    return "INCONCLUSIVE", counts, "結果不一致（A、B 內部彼此就不一致，或呈現介於中間的混合結果），不足以下明確結論。"
+    return "INCONCLUSIVE", counts, (
+        "Results are inconsistent (groups disagree internally, or land somewhere in "
+        "between), so no clear conclusion can be drawn."
+    )
 
 
 def main():
     print(f"EIP_HOST = {EIP_HOST}")
-    print(f"輸出目錄（已 gitignore）= {OUT_DIR}")
-    print("計畫執行 6 次完全獨立的 session：A1, B1, A2, B2, A3, B3（交錯執行，降低時間趨勢造成的干擾）\n")
+    print(f"Output directory (gitignored) = {OUT_DIR}")
+    print("Running 6 fully independent sessions: A1, B1, A2, B2, A3, B3 - interleaved, "
+          "so a drift over time cannot masquerade as a group difference.\n")
 
     results = []
     for i in range(1, 4):
@@ -271,18 +288,18 @@ def main():
 
     verdict, counts, explanation = _classify(results)
 
-    print("\n=== 總結 ===")
+    print("\n=== Summary ===")
     print(json.dumps(counts, ensure_ascii=False, indent=2))
-    print(f"\n判定：{verdict}")
-    print(f"理由：{explanation}")
+    print(f"\nVerdict: {verdict}")
+    print(f"Reason : {explanation}")
 
     (OUT_DIR / "verdict.json").write_text(
         json.dumps({"verdict": verdict, "counts": counts, "explanation": explanation}, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
 
-    print(f"\n完整結果已存到 {OUT_DIR / 'results.json'}，判定存到 {OUT_DIR / 'verdict.json'}。")
-    print("接下來請把這些結果交給 Claude 撰寫 docs/http-essf21-referer-ab-test.md。")
+    print(f"\nFull results written to {OUT_DIR / 'results.json'}; "
+          f"verdict to {OUT_DIR / 'verdict.json'}.")
 
 
 if __name__ == "__main__":
