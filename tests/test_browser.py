@@ -1,6 +1,8 @@
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 import browser  # noqa: E402
@@ -45,3 +47,20 @@ def test_launch_args_are_all_strings():
     everything stringified at the boundary."""
     args = browser.edge_launch_args(browser.EIP_URL)
     assert all(isinstance(a, str) for a in args)
+
+
+def test_ensure_debug_edge_reports_a_missing_edge_binary(monkeypatch):
+    """Regression: moving configuration into config.py once dropped
+    `from pathlib import Path` while these existence checks still used it,
+    so this function raised NameError at runtime. The unit tests passed
+    because nothing exercised it - hence this one."""
+    monkeypatch.setattr(browser, "EDGE_EXE", r"C:\definitely\not\here\msedge.exe")
+
+    with pytest.raises(browser.CdpConnectionError):
+        browser.ensure_debug_edge("http://eip.example.com/EFNET/")
+
+
+def test_launch_forticlient_reports_a_missing_binary(monkeypatch):
+    """Same Path-usage path as above, different function."""
+    monkeypatch.setattr(browser, "FORTICLIENT_PATH", r"C:\definitely\not\here\FortiClient.exe")
+    assert browser.launch_forticlient() is False

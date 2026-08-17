@@ -75,6 +75,38 @@ def test_empty_grid_means_no_matches(monkeypatch):
     assert duplicate_check.find_existing_submission(page=None, trip=trip) == []
 
 
+def test_submission_timestamp_is_not_mistaken_for_the_trip_date(monkeypatch):
+    """Regression from a live run: every row carries two dates - when it
+    was submitted and when the trip is. Document 202601010001 was
+    submitted on 2026/08/11 for a trip on 2026/08/03, and checking date /
+    start / end as three separate substrings matched it for a NEW trip on
+    2026/08/11, wrongly blocking a legitimate submission."""
+    rows = [{
+        "docNumber": "202601010001",
+        "text": "202601010001 王小明 2026/08/11 22:25:11 簽核中 未完成 王小明 2026/08/03 09:00-18:30",
+    }]
+    monkeypatch.setattr(
+        duplicate_check, "_navigate_to_sent_originals",
+        lambda page, timeout_ms=10000, force_reload=True: FakeGridFrame(rows),
+    )
+
+    # The trip that was wrongly blocked.
+    assert duplicate_check.find_existing_submission(
+        page=None, trip=make_trip("2026/08/11", "09:00", "18:30")) == []
+
+    # The trip that row genuinely represents must still be caught.
+    assert len(duplicate_check.find_existing_submission(
+        page=None, trip=make_trip("2026/08/03", "09:00", "18:30"))) == 1
+
+
+def test_trip_row_pattern_tolerates_spacing_variations():
+    pattern = duplicate_check.trip_row_pattern(make_trip("2026/08/04", "09:00", "18:30"))
+    assert pattern.search("王小明 2026/08/04 09:00-18:30 出差登記")
+    assert pattern.search("王小明 2026/08/04  09:00 - 18:30 出差登記")
+    assert not pattern.search("王小明 2026/08/04 13:00-17:00 出差登記")
+    assert not pattern.search("2026/08/04 10:51:27 簽核中 09:00-18:30")
+
+
 def test_lookup_always_forces_a_reload(monkeypatch):
     """A cached sentBox frame once omitted a document the server already
     had, so the duplicate check must never accept a stale list."""

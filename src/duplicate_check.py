@@ -47,6 +47,7 @@ that "no match" from the browser view is weaker evidence than an
 independent HTTP GET of sentBox.aspx (src/http_eip_client.py), which was
 authoritative in that incident.
 """
+import re
 import time
 
 from eip_client import find_tree_frame
@@ -217,11 +218,32 @@ def _extract_document_rows(grid_frame) -> list:
     )
 
 
+def trip_row_pattern(trip) -> "re.Pattern":
+    """Matches the 主旨 column's "{trip date} {start}-{end}" run.
+
+    Deliberately one contiguous pattern rather than three independent
+    substring checks. A row carries TWO dates - when it was submitted and
+    when the trip is - e.g.
+
+        202601010001 王小明 2026/08/11 22:25:11 簽核中 未完成 王小明 2026/08/03 09:00-18:30
+
+    Checking date/start/end separately matched that row for a trip on
+    2026/08/11, because the submission timestamp happened to carry that
+    date while the times came from the unrelated 08/03 trip. That false
+    positive blocked a legitimate submission. Requiring the date to be
+    immediately followed by the time range keeps the two columns apart.
+    """
+    return re.compile(
+        re.escape(trip.date) + r"\s+" + re.escape(trip.start_time)
+        + r"\s*-\s*" + re.escape(trip.end_time)
+    )
+
+
 def find_existing_submission(page, trip, timeout_ms: int = 10000) -> list:
     """Returns a list of {docNumber, text} for pending (未結案) ESSF21
-    submissions whose row text contains this trip's date, start_time
-    and end_time - i.e. a likely duplicate of `trip`. Empty list means
-    no match found under the default 未結案表單 filter.
+    submissions whose 主旨 shows this exact trip date and time range -
+    i.e. a likely duplicate of `trip`. Empty list means no match found
+    under the default 未結案表單 filter.
 
     `trip` needs .date, .start_time, .end_time attributes (a
     trip_form.TripRequest works directly).
@@ -235,9 +257,5 @@ def find_existing_submission(page, trip, timeout_ms: int = 10000) -> list:
     grid_frame = _navigate_to_sent_originals(page, timeout_ms=timeout_ms, force_reload=True)
     rows = _extract_document_rows(grid_frame)
 
-    matches = []
-    for row in rows:
-        text = row.get("text", "")
-        if trip.date in text and trip.start_time in text and trip.end_time in text:
-            matches.append(row)
-    return matches
+    pattern = trip_row_pattern(trip)
+    return [row for row in rows if pattern.search(row.get("text", ""))]

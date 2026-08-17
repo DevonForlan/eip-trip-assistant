@@ -219,9 +219,15 @@ def open_trip_form(page, timeout_ms: int = 25000, close_stale_tab: bool = True):
 
     An editable form that is already open is always reused, never closed:
     the branch below returns before any of this, so a half-filled form
-    cannot be discarded by accident.
+    cannot be discarded by accident. It is brought back to the foreground
+    first, though - an earlier duplicate check may have switched the
+    sidebar into 表單追蹤處理 mode, which leaves the trip-form tab present
+    but hidden, and callers would then hit "element is not visible" on the
+    first fill.
     """
     if find_trip_form_frame(page) is not None:
+        reactivate_trip_form_tab(page)
+        page.wait_for_timeout(500)
         return page
 
     if close_stale_tab and has_trip_form_tab(page):

@@ -97,13 +97,33 @@ def test_close_trip_form_tab_false_when_there_is_no_close_icon():
     assert eip_client.close_trip_form_tab(page, timeout_ms=500) is False
 
 
-def test_open_trip_form_reuses_an_already_open_editable_form():
+def test_open_trip_form_reuses_an_already_open_editable_form(monkeypatch):
     """A half-filled form must never be closed and rebuilt."""
+    closed = []
+    monkeypatch.setattr(eip_client, "close_trip_form_tab",
+                        lambda page, timeout_ms=10000: closed.append(True))
+    monkeypatch.setattr(eip_client, "reactivate_trip_form_tab",
+                        lambda page, timeout_ms=5000: True)
     platform = FakeFrame(PLATFORM, "main", eval_result=True)
     page = FakePage(frames=[FakeFrame(BANNER, "banner"), platform, FakeFrame(TRIP_FORM, "framePlus")])
 
     assert eip_client.open_trip_form(page) is page
-    assert platform.evaluated == [], "must not even look at the tab, let alone close it"
+    assert closed == [], "既有的可編輯表單絕不能被關閉"
+
+
+def test_open_trip_form_reactivates_a_backgrounded_form(monkeypatch):
+    """Regression from a live run: a previous duplicate check leaves the
+    sidebar in 表單追蹤處理 mode, which hides the trip-form tab. Returning
+    it as-is made the caller's first fill() fail with 'element is not
+    visible'."""
+    reactivated = []
+    monkeypatch.setattr(eip_client, "reactivate_trip_form_tab",
+                        lambda page, timeout_ms=5000: reactivated.append(True) or True)
+    page = FakePage(frames=[FakeFrame(PLATFORM, "main"), FakeFrame(TRIP_FORM, "framePlus")])
+
+    eip_client.open_trip_form(page)
+
+    assert reactivated == [True]
 
 
 def test_open_trip_form_closes_a_spent_tab_before_clicking(monkeypatch):
