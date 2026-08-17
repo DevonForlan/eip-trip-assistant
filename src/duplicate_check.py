@@ -259,3 +259,44 @@ def find_existing_submission(page, trip, timeout_ms: int = 10000) -> list:
 
     pattern = trip_row_pattern(trip)
     return [row for row in rows if pattern.search(row.get("text", ""))]
+
+
+def find_existing_submission_via_http(trip):
+    """The same lookup over plain HTTP, bypassing the browser entirely.
+
+    Returns the matching rows, or None if the HTTP route could not answer -
+    None means "no opinion", NOT "nothing found", and callers must not read
+    it as a green light.
+
+    Exists because the browser's list is not authoritative: it has been
+    observed omitting a document the server already had, and a missed
+    duplicate means filing the same trip twice. Imported lazily so the
+    Playwright track does not pull in requests/SSPI just by importing this
+    module.
+    """
+    try:
+        from http_eip_client import fetch_sent_box_rows
+        rows = fetch_sent_box_rows()
+    except Exception:  # noqa: BLE001 - an unavailable cross-check must not block
+        return None
+
+    pattern = trip_row_pattern(trip)
+    return [row for row in rows if pattern.search(row.get("text", ""))]
+
+
+def find_existing_submission_anywhere(page, trip, timeout_ms: int = 10000) -> list:
+    """Union of the browser view and the HTTP view, de-duplicated by
+    document number.
+
+    Either source reporting a match is enough to stop: the cost of a false
+    positive is re-checking by hand, while the cost of a false negative is
+    a duplicate application in the approval workflow.
+    """
+    matches = {row["docNumber"]: row for row in
+               find_existing_submission(page, trip, timeout_ms=timeout_ms)}
+
+    http_matches = find_existing_submission_via_http(trip)
+    if http_matches is not None:
+        for row in http_matches:
+            matches.setdefault(row["docNumber"], row)
+    return list(matches.values())

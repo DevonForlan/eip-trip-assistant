@@ -171,6 +171,74 @@ def test_hidden_tracking_panel_still_triggers_the_tdbar4_click(monkeypatch):
     assert duplicate_check.TRACKING_BUTTON_SELECTOR in tree.clicked
 
 
+def test_http_cross_check_returns_none_when_unavailable(monkeypatch):
+    """None means 'no opinion', not 'nothing found' - callers must not
+    treat an unavailable cross-check as a green light."""
+    import http_eip_client
+
+    def boom():
+        raise RuntimeError("SSPI 不可用")
+
+    monkeypatch.setattr(http_eip_client, "fetch_sent_box_rows", boom)
+    assert duplicate_check.find_existing_submission_via_http(
+        make_trip("2026/08/11", "09:00", "18:30")) is None
+
+
+def test_http_cross_check_finds_what_the_browser_missed(monkeypatch):
+    """The dangerous direction: the browser's cached list omits a document
+    the server already has, so without this the same trip gets filed twice."""
+    import http_eip_client
+
+    monkeypatch.setattr(
+        duplicate_check, "_navigate_to_sent_originals",
+        lambda page, timeout_ms=10000, force_reload=True: FakeGridFrame([]),  # browser sees nothing
+    )
+    monkeypatch.setattr(http_eip_client, "fetch_sent_box_rows", lambda: [
+        {"docNumber": "202601040001",
+         "text": "202601040001 王小明 2026/08/15 16:13:44 簽核中 未完成 王小明 2026/08/06 09:00-18:30"},
+    ])
+
+    found = duplicate_check.find_existing_submission_anywhere(
+        page=None, trip=make_trip("2026/08/06", "09:00", "18:30"))
+
+    assert [r["docNumber"] for r in found] == ["202601040001"]
+
+
+def test_matches_from_both_sources_are_not_double_counted(monkeypatch):
+    import http_eip_client
+
+    row = {"docNumber": "202601020001",
+           "text": "202601020001 王小明 2026/08/12 10:51:27 簽核中 未完成 王小明 2026/08/04 09:00-18:30"}
+    monkeypatch.setattr(
+        duplicate_check, "_navigate_to_sent_originals",
+        lambda page, timeout_ms=10000, force_reload=True: FakeGridFrame([row]),
+    )
+    monkeypatch.setattr(http_eip_client, "fetch_sent_box_rows", lambda: [row])
+
+    found = duplicate_check.find_existing_submission_anywhere(
+        page=None, trip=make_trip("2026/08/04", "09:00", "18:30"))
+
+    assert len(found) == 1
+
+
+def test_browser_result_still_stands_when_http_is_unavailable(monkeypatch):
+    import http_eip_client
+
+    row = {"docNumber": "202601020001",
+           "text": "202601020001 王小明 2026/08/12 10:51:27 簽核中 未完成 王小明 2026/08/04 09:00-18:30"}
+    monkeypatch.setattr(
+        duplicate_check, "_navigate_to_sent_originals",
+        lambda page, timeout_ms=10000, force_reload=True: FakeGridFrame([row]),
+    )
+    monkeypatch.setattr(http_eip_client, "fetch_sent_box_rows",
+                        lambda: (_ for _ in ()).throw(RuntimeError("網路不通")))
+
+    found = duplicate_check.find_existing_submission_anywhere(
+        page=None, trip=make_trip("2026/08/04", "09:00", "18:30"))
+
+    assert len(found) == 1
+
+
 def test_visible_exact_text_count_survives_a_dead_frame():
     class Boom:
         def evaluate(self, *a, **kw):

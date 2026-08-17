@@ -43,6 +43,7 @@ from requests_negotiate_sspi import HttpNegotiateAuth
 from config import EIP_URL  # noqa: F401 - re-exported for existing callers
 
 TRIP_WRAPPER_PATH = "src/EPI/EPIE001/EPIE001.aspx?FormID=ESSF21"
+SENT_BOX_PATH = "src/_Common/AppUtil/FormBox/sentBox.aspx?FolderID=DSCDefault"
 
 DEFAULT_TIMEOUT = 60
 """60s, not the usual few seconds: the full-version EPIE001 path was
@@ -251,6 +252,31 @@ class HttpEipClient:
         self.form_page = TripFormPage(url=resp.url, html=resp.text)
         return self.form_page
 
+    # --- 原稿資料匣 -------------------------------------------------
+    def fetch_sent_box_rows(self) -> list:
+        """Rows from 原稿資料匣 (未結案) as [{docNumber, text}].
+
+        Worth having despite duplicate_check already reading the same list
+        through the browser: that view has been caught serving a cached
+        page that omitted a document the server already had, while this
+        query returned it correctly in the same moment. For deciding
+        whether something has already been filed, a stale "no" is the
+        dangerous answer.
+        """
+        resp = self._get(urljoin(self.base_url, SENT_BOX_PATH))
+        resp.encoding = "utf-8"
+        if resp.status_code != 200:
+            raise HttpEipError(f"GET 原稿資料匣失敗：HTTP {resp.status_code}")
+
+        rows = []
+        for tr in re.findall(r"<tr[^>]*>.*?</tr>", resp.text, re.S | re.I):
+            cell = re.search(r'<td[^>]*\btitle="(\d{6,})"', tr, re.I)
+            if not cell:
+                continue
+            text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", tr)).strip()
+            rows.append({"docNumber": cell.group(1), "text": text})
+        return rows
+
     # --- convenience ------------------------------------------------
     def prepare(self) -> TripFormPage:
         """Run all four steps in order and return the form page."""
@@ -258,3 +284,11 @@ class HttpEipClient:
         self.initialize_efnet()
         self.open_trip_wrapper()
         return self.open_trip_form()
+
+
+def fetch_sent_box_rows() -> list:
+    """One-shot 原稿資料匣 lookup on its own session. GET only."""
+    client = HttpEipClient()
+    client.authenticate()
+    client.initialize_efnet()
+    return client.fetch_sent_box_rows()

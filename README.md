@@ -23,6 +23,8 @@ Python + Playwright 驅動一個已登入的 Edge；另有一條純 HTTP + Windo
 | 表單回應 200 但 0 bytes | 缺 `Accept-Language`。頁面有 I18N 邏輯，判斷不出語言就整個不輸出 |
 | `__VIEWSTATE` 是空的 | 這套系統用自有的 `__MSPVSTATE`（壓縮）取代標準 ViewState |
 | 「儲存」按鈕的真實提交機制 | 不是那顆按鈕、也不是 `__doPostBack`，而是一個 0 像素隱藏的 `<input type="image">` |
+| CDP 連線握手成功後卡住 | 長時間執行的 debug Edge 會進入「websocket 接得上、但列舉 target 卡死」的狀態。已內建偵測與自動重啟 |
+| 表單追蹤清單顯示的是舊資料 | 瀏覽器的原稿資料匣會給出快取結果，漏掉剛建立的單據。重複檢查因此同時查詢瀏覽器與獨立的 HTTP 來源 |
 
 完整調查過程見 [`docs/`](docs/)。
 
@@ -74,7 +76,8 @@ python src/main.py
 這個工具會執行**無法復原**的正式送件動作，所以刻意做了幾層限制：
 
 - **兩段式確認**：送出前會把瀏覽器上的實際欄位值讀回顯示，而不是回放你輸入的變數
-- **重複送出防護**：送出前查詢原稿資料匣，發現相同日期/時間的單據就中止
+- **重複送出防護**：送出前同時查詢瀏覽器畫面與獨立的 HTTP 來源（瀏覽器的清單會給出快取的
+  舊資料），任一來源發現相同日期/時間的單據就中止
 - **明確狀態機**（`src/state_machine.py`）：session 過期是硬性中止，且**任何情況都不自動重送**
 - **對話框分類處理**（`src/dialog_handler.py`）：beforeunload 自動接受；confirm 只在訊息不含
   「已存在／重複／覆蓋／錯誤／失敗」等關鍵字時接受；alert/prompt 一律不自動接受
@@ -83,6 +86,7 @@ python src/main.py
 - **HTTP 路線預設唯讀**：`HttpEipClient` 的 `post/put/patch/delete` 直接擋掉，要改狀態必須
   明確傳 `read_only=False`
 - **記錄一律遮罩**：Authorization/Cookie 不記錄；POST 只記欄位名稱與長度，不記值
+- **連線自我復原**：CDP 連線卡住時自動重啟瀏覽器並重試一次，但只重試一次——重啟後仍失敗代表問題不在瀏覽器，繼續重試只會拖延到人發現
 
 ## 專案結構
 
@@ -105,7 +109,7 @@ src/
 
 scripts/             # 研究與診斷用 POC（多數為唯讀）
 docs/                # 完整的調查與驗證記錄
-tests/               # 90 個單元測試
+tests/               # 103 個單元測試
 ```
 
 ## 測試

@@ -64,3 +64,79 @@ def test_launch_forticlient_reports_a_missing_binary(monkeypatch):
     """Same Path-usage path as above, different function."""
     monkeypatch.setattr(browser, "FORTICLIENT_PATH", r"C:\definitely\not\here\FortiClient.exe")
     assert browser.launch_forticlient() is False
+
+
+class FakeChromium:
+    def __init__(self, fail_times=0):
+        self.calls = 0
+        self.fail_times = fail_times
+        self.timeouts = []
+
+    def connect_over_cdp(self, url, timeout=None):
+        self.calls += 1
+        self.timeouts.append(timeout)
+        if self.calls <= self.fail_times:
+            raise TimeoutError("Timeout exceeded")
+        return f"browser-{self.calls}"
+
+
+class FakePlaywright:
+    def __init__(self, chromium):
+        self.chromium = chromium
+
+
+@pytest.fixture
+def no_restart_side_effects(monkeypatch):
+    """Neutralize the parts of a restart that touch the real machine."""
+    killed = []
+    relaunched = []
+    monkeypatch.setattr(browser, "_kill_debug_edge", lambda: killed.append(True))
+    monkeypatch.setattr(browser, "_ensure_debug_edge_or_explain", lambda: relaunched.append(True))
+    monkeypatch.setattr(browser.time, "sleep", lambda s: None)
+    return killed, relaunched
+
+
+def test_connect_does_not_restart_when_the_first_attempt_works(no_restart_side_effects):
+    killed, relaunched = no_restart_side_effects
+    chromium = FakeChromium(fail_times=0)
+
+    result = browser._connect_with_recovery(FakePlaywright(chromium))
+
+    assert result == "browser-1"
+    assert killed == [] and relaunched == []
+
+
+def test_connect_restarts_the_browser_once_when_it_hangs(no_restart_side_effects):
+    """The observed failure: the CDP websocket connects but target
+    enumeration never completes. Restarting always cured it."""
+    killed, relaunched = no_restart_side_effects
+    chromium = FakeChromium(fail_times=1)
+
+    result = browser._connect_with_recovery(FakePlaywright(chromium))
+
+    assert result == "browser-2"
+    assert killed == [True], "應該先關掉卡住的瀏覽器"
+    assert relaunched == [True], "然後重新啟動一個"
+
+
+def test_connect_gives_up_after_one_restart(no_restart_side_effects):
+    """A freshly launched browser that still will not talk is not a
+    problem restarting again would solve."""
+    chromium = FakeChromium(fail_times=99)
+
+    with pytest.raises(browser.CdpConnectionError) as excinfo:
+        browser._connect_with_recovery(FakePlaywright(chromium))
+
+    assert chromium.calls == 2, "只重試一次，不無限重啟"
+    assert "msedge.exe" in str(excinfo.value), "失敗訊息要附上手動啟動指令"
+
+
+def test_connect_uses_a_short_timeout_not_playwrights_180s_default(no_restart_side_effects):
+    """A hang needs to be detected quickly - the fix is a restart, and
+    waiting three minutes first just delays it."""
+    chromium = FakeChromium(fail_times=0)
+
+    browser._connect_with_recovery(FakePlaywright(chromium))
+
+    assert chromium.timeouts == [browser.CONNECT_TIMEOUT_MS]
+    assert browser.CONNECT_TIMEOUT_MS < 180_000

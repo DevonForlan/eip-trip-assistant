@@ -130,8 +130,12 @@ def _require_authenticated(page, flow: TripFlow, step_reason: str) -> None:
     callers should let that propagate all the way out to main()'s
     top-level handler rather than catching it locally, since there is
     nothing safe to do at any intermediate step except stop.
+
+    Waits out an UNKNOWN rather than treating it as fatal: these checks run
+    right after a postback, when the frameset is being rebuilt and briefly
+    looks unrecognizable. EXPIRED still stops immediately.
     """
-    state = check_session(page)
+    state = wait_until_authenticated(page)
     if state == SessionState.EXPIRED:
         flow.transition(TripState.SESSION_EXPIRED, step_reason)  # raises
     elif state == SessionState.UNKNOWN:
@@ -188,7 +192,10 @@ def main():
             flow.transition(TripState.FORM_FILLED, "填入表單資料")
 
             print("\n檢查「表單追蹤處理」是否已經有相同日期/時間的單據，避免重複送出...")
-            existing = duplicate_check.find_existing_submission(page, trip)
+            # Checks the browser view AND an independent HTTP query - the
+            # browser's list has been caught serving cached results, and a
+            # missed duplicate means filing the same trip twice.
+            existing = duplicate_check.find_existing_submission_anywhere(page, trip)
             if existing:
                 flow.transition(TripState.FAILED, "偵測到可能重複的既有單據")
                 print("\n[error] 在「原稿資料匣」找到疑似重複的單據，已停止，未送出：")

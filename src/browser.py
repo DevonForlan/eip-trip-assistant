@@ -28,6 +28,7 @@ test was against a *different* problem - a Playwright-driven page.goto(),
 which is blocked regardless of any allowlist. The two are unrelated.
 """
 import json
+import os
 import socket
 import subprocess
 import time
@@ -221,17 +222,47 @@ def ensure_debug_edge(url: str = EIP_URL, attempts: int = 3, settle_timeout_seco
     )
 
 
-def attach_context(playwright: Playwright) -> tuple[Browser, BrowserContext]:
-    """Ensure VPN is up and a debug Edge pointed at EIP is running, then
-    attach Playwright to it. Playwright only reads/fills the DOM here -
-    it never navigates, since CDP-driven navigation doesn't get automatic
-    NTLM SSO the way a command-line-argument launch does.
-    """
-    if not ensure_vpn_connected():
-        raise VpnRequiredError(
-            "連不到 EIP，且等待 VPN 連線逾時。請確認 FortiClient 是否已連線成功再重試。"
-        )
+# Playwright's own default is 180s. That is far too patient for a wedged
+# browser: the failure mode is a hang, not slowness, and every second spent
+# waiting is a second not spent on the restart that actually fixes it.
+CONNECT_TIMEOUT_MS = int(os.environ.get("EIP_CDP_CONNECT_TIMEOUT_MS", "30000"))
 
+
+def _connect_with_recovery(playwright: Playwright) -> Browser:
+    """connect_over_cdp, restarting the browser once if it hangs.
+
+    Only the first attempt is forgiving. If a freshly launched browser also
+    refuses to hand over a CDP session, something is wrong that restarting
+    will not fix, and looping would just delay a human finding out.
+    """
+    try:
+        return playwright.chromium.connect_over_cdp(CDP_URL, timeout=CONNECT_TIMEOUT_MS)
+    except Exception as first_error:  # noqa: BLE001 - any failure means "try a restart"
+        print(f"[warn] CDP 連線失敗（{type(first_error).__name__}），"
+              "研判 debug Edge 已卡住，重新啟動後再試一次...")
+
+    _kill_debug_edge()
+    time.sleep(2)
+    _ensure_debug_edge_or_explain()
+
+    try:
+        browser = playwright.chromium.connect_over_cdp(CDP_URL, timeout=CONNECT_TIMEOUT_MS)
+    except Exception as e:  # noqa: BLE001
+        raise CdpConnectionError(
+            f"重新啟動 Edge 後仍無法連線到 {CDP_URL}：{e}\n"
+            "請自己執行以下指令開啟 Edge 並確認登入成功，再重新執行本程式：\n"
+            f"  {_manual_launch_command()}"
+        ) from e
+    print("[info] 重新啟動後連線成功。")
+    return browser
+
+
+def _manual_launch_command() -> str:
+    exe, *rest = edge_launch_args(EIP_URL)
+    return " ".join([f'"{exe}"'] + [f'"{a}"' if " " in a else a for a in rest])
+
+
+def _ensure_debug_edge_or_explain() -> None:
     try:
         ensure_debug_edge(EIP_URL)
     except CdpConnectionError:
@@ -239,16 +270,38 @@ def attach_context(playwright: Playwright) -> tuple[Browser, BrowserContext]:
         # flaky network - fall back to the manual path rather than just
         # failing outright, so the tool still works even when the
         # automatic route doesn't settle in time.
-        exe, *rest = edge_launch_args(EIP_URL)
-        manual_cmd = " ".join([f'"{exe}"'] + [f'"{a}"' if " " in a else a for a in rest])
         raise CdpConnectionError(
             "自動開啟 Edge 逾時，可能是網路連線不穩定。請自己執行以下指令開啟 Edge 並確認登入成功，"
             "再重新執行本程式：\n"
-            f"  {manual_cmd}"
+            f"  {_manual_launch_command()}"
         )
 
+
+def attach_context(playwright: Playwright) -> tuple[Browser, BrowserContext]:
+    """Ensure VPN is up and a debug Edge pointed at EIP is running, then
+    attach Playwright to it. Playwright only reads/fills the DOM here -
+    it never navigates, since CDP-driven navigation doesn't get automatic
+    NTLM SSO the way a command-line-argument launch does.
+
+    A long-running debug Edge can reach a state where the CDP websocket
+    still accepts a connection but connect_over_cdp then hangs during
+    target enumeration - observed repeatedly, and always cured by
+    restarting the browser (it began after Edge auto-updated underneath a
+    running instance). So a hang here is treated as a wedged browser: kill
+    it, relaunch, and try once more, instead of making a human notice and
+    do exactly that by hand.
+    """
+    if not ensure_vpn_connected():
+        raise VpnRequiredError(
+            "連不到 EIP，且等待 VPN 連線逾時。請確認 FortiClient 是否已連線成功再重試。"
+        )
+
+    _ensure_debug_edge_or_explain()
+
     try:
-        browser = playwright.chromium.connect_over_cdp(CDP_URL)
+        browser = _connect_with_recovery(playwright)
+    except CdpConnectionError:
+        raise
     except Exception as e:  # noqa: BLE001 - surfaced as a clear setup error
         raise CdpConnectionError(f"無法連線到 {CDP_URL}：{e}") from e
     context = browser.contexts[0] if browser.contexts else browser.new_context()
