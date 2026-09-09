@@ -10,11 +10,14 @@ folded into the note field instead.
 submit_form() clicks a real, irreversible Send button - only call it
 after the user has explicitly confirmed with `y` (see src/main.py).
 """
+import os
 import re
 import time
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
+
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from dialog_handler import DialogRecorder
 from eip_client import find_trip_form_frame, find_trip_form_wrapper_frame
@@ -191,7 +194,13 @@ def add_traveler(page, employee_code: str) -> str:
     return resolved_name
 
 
-def submit_form(page) -> None:
+# The send is a heavy postback, and 10s was not enough on a cold HTTP
+# cache - the click timed out mid-action, which is the one outcome that
+# leaves "did it send?" genuinely unanswered.
+SEND_CLICK_TIMEOUT_MS = int(os.environ.get("EIP_SEND_CLICK_TIMEOUT_MS", "45000"))
+
+
+def submit_form(page) -> bool:
     """Clicks the real Send button - a genuine, irreversible
     submission into the approval workflow. Only ever call this after the
     user has explicitly confirmed with `y`. Never call this during
@@ -202,6 +211,10 @@ def submit_form(page) -> None:
     accept/dismiss policy - this does NOT blindly accept every dialog
     type anymore (that was flagged as a real risk in the 2026-08
     architecture review).
+
+    Returns True if the click timed out mid-action. That is not a failure
+    signal - only verify_submission can say what actually happened - but
+    callers should treat an UNKNOWN verdict after it as needing human eyes.
     """
     wrapper = find_trip_form_wrapper_frame(page)
     if wrapper is None:
@@ -213,14 +226,25 @@ def submit_form(page) -> None:
     network_recorder = NetworkRecorder("send trip registration")
     dialog_recorder.attach(page)
     network_recorder.attach(page)
+    click_timed_out = False
     try:
-        wrapper.click(SEND_BUTTON_SELECTOR, timeout=10000)
+        try:
+            wrapper.click(SEND_BUTTON_SELECTOR, timeout=SEND_CLICK_TIMEOUT_MS)
+        except PlaywrightTimeoutError:
+            # The click was dispatched and then timed out mid-action, which
+            # says nothing about whether the submission landed. Raising here
+            # skips verification and leaves exactly the ambiguity the caller
+            # most needs resolved, so let verify_submission read the real
+            # outcome off the page instead. This is not a retry - nothing is
+            # clicked again.
+            click_timed_out = True
         page.wait_for_timeout(1500)
     finally:
         dialog_recorder.detach()
         network_recorder.detach()
         network_recorder.save(LOG_DIR / f"submit_{int(time.time())}.log")
     dialog_recorder.raise_if_unexpected()
+    return click_timed_out
 
 
 class SubmissionResult(str, Enum):

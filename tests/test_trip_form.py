@@ -334,3 +334,35 @@ def test_verify_submission_unknown_on_timeout_with_no_signal(monkeypatch):
     result, detail = trip_form.verify_submission(page, timeout_ms=100)
 
     assert result == SubmissionResult.UNKNOWN
+
+
+def test_submit_form_reports_a_click_timeout_instead_of_raising(monkeypatch):
+    """A click that times out mid-action says nothing about whether the
+    submission landed. Raising here skipped verify_submission entirely and
+    left the one question that actually mattered unanswered - seen live,
+    where the send had in fact not gone through but nothing could confirm
+    that without a separate investigation."""
+    from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+
+    class TimingOutFrame(FakeFrame):
+        def click(self, selector, timeout=None):
+            self.clicked.append(selector)
+            raise PlaywrightTimeoutError("Frame.click: Timeout exceeded")
+
+    fake_frame = TimingOutFrame()
+    fake_page = FakePage()
+    monkeypatch.setattr(trip_form, "find_trip_form_wrapper_frame", lambda page: fake_frame)
+
+    timed_out = trip_form.submit_form(page=fake_page)
+
+    assert timed_out is True
+    assert trip_form.SEND_BUTTON_SELECTOR in fake_frame.clicked
+    assert "dialog" not in fake_page.listeners, "listeners still cleaned up"
+
+
+def test_submit_form_reports_no_timeout_on_a_normal_click(monkeypatch):
+    fake_frame = FakeFrame()
+    fake_page = FakePage()
+    monkeypatch.setattr(trip_form, "find_trip_form_wrapper_frame", lambda page: fake_frame)
+
+    assert trip_form.submit_form(page=fake_page) is False

@@ -83,19 +83,45 @@ def _find_banner_frame(page):
     return None
 
 
-def wait_for_banner_frame(page, timeout_ms: int = 10000):
-    """Wait for the banner frame instead of demanding it be there already.
+# The banner is only useful once its document has run: the shortcut cell and
+# the function its onclick calls both have to exist.
+BANNER_READY_JS = """
+() => document.readyState === 'complete'
+      && !!document.querySelector('td#tdMenu_1')
+      && typeof createTab === 'function'
+"""
+
+
+def _banner_is_ready(banner) -> bool:
+    try:
+        return bool(banner.evaluate(BANNER_READY_JS))
+    except Exception:  # noqa: BLE001 - a frame mid-navigation cannot evaluate
+        return False
+
+
+def wait_for_banner_frame(page, timeout_ms: int = 10000, require_ready: bool = True):
+    """Wait for the banner frame to exist AND be usable.
 
     The frameset assembles asynchronously, so right after the homepage
     loads (or reloads) page.frames can be missing titlebar1.aspx for a
     moment. Failing instantly on that produced a "the page may have changed" error for
     what was really just a page that had not finished settling - observed
     live, where an immediate retry succeeded with no other change.
+
+    Presence alone is not enough, though. The frame's URL is set well
+    before its document has run, and every caller here wants to act on its
+    contents. Returning it early produced three different symptoms from one
+    cause, all on a cold HTTP cache: a click that timed out against a
+    half-built DOM, a click that landed but did nothing because createTab
+    was not defined yet, and td#tdMenu_1 simply missing. Waiting for the
+    document to be complete removes all three.
+
+    Pass require_ready=False to get the old presence-only behaviour.
     """
     deadline = time.time() + timeout_ms / 1000
     while True:
         banner = _find_banner_frame(page)
-        if banner is not None:
+        if banner is not None and (not require_ready or _banner_is_ready(banner)):
             return banner
         if time.time() >= deadline:
             return None
@@ -107,6 +133,37 @@ def _find_platform_frame(page):
         if "platform.aspx" in f.url:
             return f
     return None
+
+
+# platform.aspx hosts the jQuery UI Tabs widget that every form tab is added
+# to, so "the tabs container exists" is what makes it usable.
+PLATFORM_READY_JS = """
+() => document.readyState === 'complete' && !!document.getElementById('tabs')
+"""
+
+
+def wait_for_platform_frame(page, timeout_ms: int = 60000):
+    """Wait for platform.aspx to be able to receive a new tab.
+
+    createTab() adds the form's tab to the widget in this frame. Called
+    before the frame is ready, it does nothing at all - no error, no tab -
+    and the caller then waits out its whole timeout for a form frame that
+    was never going to appear. That is exactly what "clicked the shortcut
+    but the form never finished loading" was, every time, on a
+    freshly launched browser.
+    """
+    deadline = time.time() + timeout_ms / 1000
+    while True:
+        frame = _find_platform_frame(page)
+        if frame is not None:
+            try:
+                if frame.evaluate(PLATFORM_READY_JS):
+                    return frame
+            except Exception:  # noqa: BLE001 - mid-navigation frames cannot evaluate
+                pass
+        if time.time() >= deadline:
+            return None
+        page.wait_for_timeout(300)
 
 
 # The trip-registration tab is a jQuery UI Tabs widget in platform.aspx - its
@@ -130,11 +187,51 @@ def reactivate_trip_form_tab(page, timeout_ms: int = 5000) -> bool:
     platform_frame = _find_platform_frame(page)
     if platform_frame is None:
         return False
+
+    # Click the anchor from inside the page rather than through Playwright.
+    # These are jQuery UI Tabs: the handler is bound by jQuery, and a
+    # synthetic click on the tab header was seen registering without
+    # switching the panel, leaving the form's own frame display:none and
+    # every field measuring 0x0.
+    try:
+        platform_frame.evaluate("""() => {
+            const a = document.getElementById('ESSF21');
+            if (a) a.click();
+        }""")
+    except (PlaywrightError, PlaywrightTimeoutError):
+        pass
+
+    if _trip_form_tab_is_shown(platform_frame, timeout_ms):
+        return True
+
     try:
         platform_frame.click(TRIP_FORM_TAB_ANCHOR_SELECTOR, timeout=timeout_ms)
-        return True
     except (PlaywrightError, PlaywrightTimeoutError):
         return False
+    return _trip_form_tab_is_shown(platform_frame, timeout_ms)
+
+
+def _trip_form_tab_is_shown(platform_frame, timeout_ms: int) -> bool:
+    """Whether the trip-form panel is actually the visible one.
+
+    Checked rather than assumed: the point of reactivating is that the
+    panel is displayed, and "the click did not raise" turned out not to
+    mean that.
+    """
+    deadline = time.time() + timeout_ms / 1000
+    while True:
+        try:
+            shown = platform_frame.evaluate("""() => {
+                const p = document.getElementById('tab-ESSF21');
+                return !!p && getComputedStyle(p).display !== 'none';
+            }""")
+        except (PlaywrightError, PlaywrightTimeoutError):
+            shown = False
+        if shown:
+            return True
+        if time.time() >= deadline:
+            return False
+        platform_frame.wait_for_timeout(200)
 
 
 def has_trip_form_tab(page) -> bool:
@@ -235,6 +332,14 @@ def open_trip_form(page, timeout_ms: int = 25000, close_stale_tab: bool = True):
         close_trip_form_tab(page)
         page.wait_for_timeout(1000)
 
+    # The tab lands in platform.aspx, so that frame has to be ready before
+    # the shortcut is triggered - not just the banner the shortcut lives in.
+    if wait_for_platform_frame(page, timeout_ms=min(timeout_ms, 120000)) is None:
+        raise RuntimeError(
+            "Timed out waiting for platform.aspx to be ready - the trip form's tab "
+            "is created there, so triggering the shortcut before it loads does nothing."
+        )
+
     banner = wait_for_banner_frame(page)
     if banner is None:
         raise RuntimeError(
@@ -246,11 +351,28 @@ def open_trip_form(page, timeout_ms: int = 25000, close_stale_tab: bool = True):
     existing_frame_urls = {f.url for f in page.frames}
 
     clicked = False
+    # Preferred: run the menu cell's own onclick. It calls createTab(...)
+    # with the form id already baked in by the server, so this is the exact
+    # action the UI performs, without depending on a synthetic click
+    # reaching the right element - the shortcut is a decorative <td> whose
+    # handler sits on an ancestor, and clicking through the child cell was
+    # observed registering as a click while triggering nothing.
     try:
-        banner.locator(TRIGGER_SELECTOR).click(timeout=5000)
-        clicked = True
+        result = banner.evaluate("""() => {
+            const el = document.querySelector('td#tdMenu_1');
+            if (!el || typeof el.onclick !== 'function') return false;
+            el.onclick();
+            return true;
+        }""")
+        clicked = bool(result)
     except (PlaywrightError, PlaywrightTimeoutError):
         pass
+    if not clicked:
+        try:
+            banner.locator(TRIGGER_SELECTOR).click(timeout=5000)
+            clicked = True
+        except (PlaywrightError, PlaywrightTimeoutError):
+            pass
     if not clicked:
         candidates = banner.get_by_text(TRIGGER_TEXT, exact=False)
         if candidates.count() > 0:

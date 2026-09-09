@@ -30,6 +30,7 @@ which is blocked regardless of any allowlist. The two are unrelated.
 import json
 import os
 import socket
+import shutil
 import subprocess
 import time
 import urllib.request
@@ -157,13 +158,50 @@ def _pid_listening_on_port(port: int) -> int | None:
     return None
 
 
+def _debug_edge_pids_by_profile() -> list:
+    """PIDs of msedge processes launched against our own debug profile,
+    found by command line rather than by port.
+
+    Needed because a launch can leave Edge alive with the DevTools server
+    never started - no DevToolsActivePort, nothing listening on 9222 - and
+    a port-based lookup then finds nothing to kill. Meanwhile the dead
+    instance still owns the profile, so every subsequent launch just hands
+    its URL to it and exits, and the retry loop spins without effect.
+
+    Matching is on the profile directory, which only our own launches ever
+    pass, so the user's real browser windows can never be selected.
+    """
+    script = (
+        "Get-CimInstance Win32_Process -Filter \"Name='msedge.exe'\" | "
+        "Where-Object { $_.CommandLine -like '*' + $env:EIP_DEBUG_PROFILE + '*' } | "
+        "ForEach-Object { $_.ProcessId }"
+    )
+    try:
+        out = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+            capture_output=True, text=True, timeout=30,
+            env={**os.environ, "EIP_DEBUG_PROFILE": str(EDGE_PROFILE_DIR)},
+        ).stdout
+    except Exception:  # noqa: BLE001
+        return []
+    return [int(line) for line in out.split() if line.strip().isdigit()]
+
+
 def _kill_debug_edge() -> None:
-    """Kill whatever is listening on the debug port. Only ever targets
-    our own dedicated debug-profile Edge instance (identified purely by
-    which process owns port 9222) - never the user's real browser
-    windows, which don't have --remote-debugging-port at all."""
-    pid = _pid_listening_on_port(9222)
-    if pid is not None:
+    """Kill our own dedicated debug-profile Edge instance - never the
+    user's real browser windows.
+
+    Two ways of identifying it, because neither alone is sufficient: the
+    owner of port 9222 (which finds it even if the profile path is ever
+    reconfigured) and any process whose command line carries our profile
+    directory (which finds it when the DevTools server never came up, and
+    catches the child processes that keep the profile locked).
+    """
+    pids = set(_debug_edge_pids_by_profile())
+    port_pid = _pid_listening_on_port(9222)
+    if port_pid is not None:
+        pids.add(port_pid)
+    for pid in pids:
         subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True)
 
 
@@ -179,7 +217,13 @@ def _launch_debug_edge_once(url: str, settle_timeout_seconds: int) -> bool:
     error page a moment later.
     """
     if not _cdp_port_is_up():
-        EDGE_PROFILE_DIR.mkdir(exist_ok=True)
+        # A live instance that never opened the port would silently swallow
+        # this launch: Edge hands the URL to the existing process for that
+        # profile and exits immediately.
+        if _debug_edge_pids_by_profile():
+            _kill_debug_edge()
+            time.sleep(2)
+        EDGE_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
         subprocess.Popen(edge_launch_args(url))
 
     deadline = time.time() + settle_timeout_seconds
@@ -219,10 +263,52 @@ def ensure_debug_edge(url: str = EIP_URL, attempts: int = 3, settle_timeout_seco
             _kill_debug_edge()
             time.sleep(1)
 
+    # Last resort: the profile itself wedges. Edge then starts, spawns its
+    # child processes and never brings up the DevTools server - no
+    # DevToolsActivePort, nothing on the debug port - and no number of
+    # relaunches recovers it. Observed twice in one afternoon. Recreating
+    # the profile fixes it every time, and costs nothing: it holds no user
+    # data, and --auth-server-allowlist signs a fresh one back in silently.
+    _kill_debug_edge()
+    time.sleep(1)
+    if _discard_wedged_profile():
+        print("[warn] Edge would not open its debug port; discarded the profile "
+              "and launching a fresh one.")
+        if _launch_debug_edge_once(url, settle_timeout_seconds):
+            return
+
     raise CdpConnectionError(
-        f"Timed out launching Edge after {attempts} attempts - it may be stuck retrying "
-        "NTLM/DNS. Check the network connection."
+        f"Timed out launching Edge after {attempts} attempts (and once more with a "
+        "fresh profile) - it may be stuck retrying NTLM/DNS. Check the network "
+        "connection."
     )
+
+
+# Files Chromium always leaves in a profile it has actually used. Requiring
+# one of them keeps the reset below from ever deleting something that is not
+# a browser profile, however EIP_EDGE_PROFILE_DIR is set.
+PROFILE_MARKERS = ("Local State", "Default")
+
+
+def _discard_wedged_profile() -> bool:
+    """Delete the debug profile so the next launch builds a fresh one.
+
+    Returns False without touching anything unless the configured directory
+    really looks like a Chromium profile - this deletes a whole tree, and
+    the path comes from an environment variable.
+    """
+    profile = EDGE_PROFILE_DIR
+    if not profile.is_dir():
+        return False
+    if not any((profile / marker).exists() for marker in PROFILE_MARKERS):
+        print(f"[warn] {profile} does not look like a browser profile; leaving it alone.")
+        return False
+    try:
+        shutil.rmtree(profile)
+        return True
+    except Exception as e:  # noqa: BLE001 - a failed reset is not fatal on its own
+        print(f"[warn] could not remove the wedged profile ({type(e).__name__}: {e}).")
+        return False
 
 
 # Playwright's own default is 180s. That is far too patient for a wedged

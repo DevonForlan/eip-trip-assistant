@@ -1,6 +1,8 @@
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+import pytest
+
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
@@ -132,6 +134,19 @@ class FakeTreeFrame:
         self._switched = False
 
     def evaluate(self, script, arg=None):
+        # An in-page dispatch is still a click on that button, so record it
+        # the same way - these tests care that the button was activated, not
+        # which mechanism did it.
+        if "querySelector" in script and "el.click()" in script:
+            self.clicked.append(arg)
+            if arg == duplicate_check.TRACKING_BUTTON_SELECTOR:
+                self._switched = True
+            return True
+        # The button-exists probe asks a different question from the
+        # visible-text count, and answers True from the start: the markup is
+        # there, it is only the panel that is hidden.
+        if "querySelector" in script:
+            return arg == duplicate_check.TRACKING_BUTTON_SELECTOR
         if not self._switched:
             return 0
         return 1 if arg in self.visible_after_click else 0
@@ -245,3 +260,119 @@ def test_visible_exact_text_count_survives_a_dead_frame():
             raise RuntimeError("Frame was detached")
 
     assert duplicate_check._visible_exact_text_count(Boom(), "原稿資料匣") == 0
+
+
+def test_navigation_waits_for_the_tracking_button_before_clicking(monkeypatch):
+    """The tree frame's URL is set before its document runs, so #tdBar4 can
+    genuinely not exist yet on a cold cache. Clicking straight away spent
+    the 8s timeout and reported a layout change for what was a page still
+    loading - it cost two live submission attempts."""
+
+    class LateTree(FakeTreeFrame):
+        def __init__(self, appears_on_probe):
+            super().__init__(visible_after_click=set())
+            self._appears_on_probe = appears_on_probe
+            self.probes = 0
+
+        def evaluate(self, script, arg=None):
+            if "querySelector" in script and "el.click()" not in script:
+                self.probes += 1
+                return self.probes >= self._appears_on_probe
+            return super().evaluate(script, arg)
+
+    tree = LateTree(appears_on_probe=3)
+    page = FakePageForNav(tree)
+    monkeypatch.setattr(duplicate_check, "find_tree_frame", lambda p: tree)
+    monkeypatch.setattr(duplicate_check, "_wait_for_visible_text",
+                        lambda p, text, timeout_ms: False)
+
+    try:
+        duplicate_check._navigate_to_sent_originals(page, timeout_ms=5000)
+    except RuntimeError:
+        pass  # the fake never reveals the folder; the click is what matters
+
+    assert tree.probes >= 3, "should have waited for the button to appear"
+    assert duplicate_check.TRACKING_BUTTON_SELECTOR in tree.clicked
+
+
+def test_navigation_reports_a_missing_tracking_button_distinctly(monkeypatch):
+    class NeverAppears(FakeTreeFrame):
+        def __init__(self):
+            super().__init__(visible_after_click=set())
+
+        def evaluate(self, script, arg=None):
+            if "querySelector" in script:
+                return False
+            return super().evaluate(script, arg)
+
+    tree = NeverAppears()
+    page = FakePageForNav(tree)
+    monkeypatch.setattr(duplicate_check, "find_tree_frame", lambda p: tree)
+
+    with pytest.raises(RuntimeError) as excinfo:
+        duplicate_check._navigate_to_sent_originals(page, timeout_ms=1000)
+
+    assert "never appeared" in str(excinfo.value)
+    assert duplicate_check.TRACKING_BUTTON_SELECTOR not in tree.clicked
+
+
+def test_tracking_button_is_clicked_from_inside_the_page(monkeypatch):
+    """Playwright's click on #tdBar4 reports the element visible, enabled and
+    stable and then hangs to its timeout - seen on both the sidebar button
+    and the banner shortcut. Dispatching in-page runs the same handler."""
+
+    class Tree(FakeTreeFrame):
+        def __init__(self):
+            super().__init__(visible_after_click=set())
+            self.in_page_clicks = []
+
+        def evaluate(self, script, arg=None):
+            if "querySelector" in script and "el.click()" in script:
+                self.in_page_clicks.append(arg)
+                self._switched = True
+                return True
+            if "querySelector" in script:
+                return arg == duplicate_check.TRACKING_BUTTON_SELECTOR
+            return super().evaluate(script, arg)
+
+        def click(self, selector, timeout=None):
+            raise AssertionError("should not fall back to Playwright's click here")
+
+    tree = Tree()
+    page = FakePageForNav(tree)
+    monkeypatch.setattr(duplicate_check, "find_tree_frame", lambda p: tree)
+    monkeypatch.setattr(duplicate_check, "_wait_for_visible_text",
+                        lambda p, text, timeout_ms: False)
+
+    try:
+        duplicate_check._navigate_to_sent_originals(page, timeout_ms=5000)
+    except RuntimeError:
+        pass  # the fake never reveals the folder
+
+    assert tree.in_page_clicks == [duplicate_check.TRACKING_BUTTON_SELECTOR]
+
+
+def test_tracking_button_falls_back_to_a_real_click(monkeypatch):
+    class Tree(FakeTreeFrame):
+        def __init__(self):
+            super().__init__(visible_after_click=set())
+
+        def evaluate(self, script, arg=None):
+            if "querySelector" in script and "el.click()" in script:
+                return False  # in-page dispatch could not find it
+            if "querySelector" in script:
+                return arg == duplicate_check.TRACKING_BUTTON_SELECTOR
+            return super().evaluate(script, arg)
+
+    tree = Tree()
+    page = FakePageForNav(tree)
+    monkeypatch.setattr(duplicate_check, "find_tree_frame", lambda p: tree)
+    monkeypatch.setattr(duplicate_check, "_wait_for_visible_text",
+                        lambda p, text, timeout_ms: False)
+
+    try:
+        duplicate_check._navigate_to_sent_originals(page, timeout_ms=5000)
+    except RuntimeError:
+        pass
+
+    assert duplicate_check.TRACKING_BUTTON_SELECTOR in tree.clicked

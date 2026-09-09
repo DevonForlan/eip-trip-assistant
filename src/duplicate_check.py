@@ -127,6 +127,49 @@ def _click_if_visible(locator, timeout=3000) -> bool:
         return False
 
 
+def _click_in_page(frame, selector: str) -> bool:
+    """Click an element from inside the page. True if it was dispatched.
+
+    Preferred over Playwright's click throughout this frameset. Its
+    actionability checks pass - the element reports visible, enabled and
+    stable - and then the click itself hangs until the timeout, repeatedly,
+    on both the sidebar's tracking button and the banner's shortcut.
+    Dispatching from in-page runs the same handler without that.
+    """
+    try:
+        return bool(frame.evaluate("""(sel) => {
+            const el = document.querySelector(sel);
+            if (!el) return false;
+            el.click();
+            return true;
+        }""", selector))
+    except Exception:  # noqa: BLE001 - a frame mid-navigation cannot evaluate
+        return False
+
+
+def _wait_for_tracking_button(page, timeout_ms: int) -> bool:
+    """Whether the sidebar's tracking button exists yet.
+
+    Separate from clicking it because "not there yet" and "not there at
+    all" need different messages: the first is a cold cache and resolves
+    on its own, the second means the sidebar changed shape.
+    """
+    deadline = time.time() + max(timeout_ms, 1000) / 1000
+    while True:
+        tree = find_tree_frame(page)
+        if tree is not None:
+            try:
+                if tree.evaluate(
+                    "sel => !!document.querySelector(sel)", TRACKING_BUTTON_SELECTOR
+                ):
+                    return True
+            except Exception:  # noqa: BLE001 - a frame mid-navigation cannot evaluate
+                pass
+        if time.time() >= deadline:
+            return False
+        page.wait_for_timeout(300)
+
+
 def _navigate_to_sent_originals(page, timeout_ms: int = 10000, force_reload: bool = True):
     """Get the drafts > uncategorized grid frame, clicking through the
     sidebar as needed.
@@ -151,12 +194,22 @@ def _navigate_to_sent_originals(page, timeout_ms: int = 10000, force_reload: boo
     # not merely present: the panel's markup exists (0x0) from page load, so
     # an existence check here silently skips this click - see module docstring.
     if _visible_exact_text_count(tree, ORIGINAL_FOLDER_TEXT) == 0:
-        try:
-            tree.click(TRACKING_BUTTON_SELECTOR, timeout=8000)
-        except Exception as e:  # noqa: BLE001
+        # The tree frame's URL is set well before its document runs, so the
+        # button can genuinely not exist yet on a cold cache. Waiting for it
+        # beats an 8s click timeout that reads like a layout change.
+        if not _wait_for_tracking_button(page, timeout_ms):
             raise RuntimeError(
-                f"Failed to click the form-tracking button ({TRACKING_BUTTON_SELECTOR}): {e}"
-            ) from e
+                f"The form-tracking button ({TRACKING_BUTTON_SELECTOR}) never appeared "
+                "in the sidebar - if the page has only just loaded, retry shortly."
+            )
+        tree = find_tree_frame(page)
+        if not _click_in_page(tree, TRACKING_BUTTON_SELECTOR):
+            try:
+                tree.click(TRACKING_BUTTON_SELECTOR, timeout=8000)
+            except Exception as e:  # noqa: BLE001
+                raise RuntimeError(
+                    f"Failed to click the form-tracking button ({TRACKING_BUTTON_SELECTOR}): {e}"
+                ) from e
         if not _wait_for_visible_text(page, ORIGINAL_FOLDER_TEXT, PANEL_SWITCH_TIMEOUT_MS):
             raise RuntimeError(
                 "Clicked the form-tracking button but the drafts folder never became "

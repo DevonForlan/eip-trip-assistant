@@ -41,8 +41,29 @@ CDP_URL = os.environ.get("EIP_CDP_URL", "http://127.0.0.1:9222")
 EDGE_EXE = os.environ.get(
     "EIP_EDGE_PATH", r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
 )
+def _default_edge_profile_dir() -> Path:
+    """Where the dedicated debug-Edge profile lives.
+
+    Deliberately outside the project: this repository is commonly checked
+    out inside a synced OneDrive folder, and a browser profile does not
+    belong in one. Cloud sync turns the profile's files into on-demand
+    placeholders and holds handles on them, which has produced an Edge that
+    starts but never brings up its DevTools server (no DevToolsActivePort,
+    nothing listening on the debug port) and a profile directory that
+    cannot even be renamed. It also means ~350 MB of browser state,
+    cookies and Login Data included, gets uploaded to corporate storage.
+
+    Falls back to the old in-project location only if there is no
+    LOCALAPPDATA to use.
+    """
+    local = os.environ.get("LOCALAPPDATA")
+    if local:
+        return Path(local) / "eip-trip-assistant" / "edge-profile"
+    return ROOT / ".edge-profile"
+
+
 EDGE_PROFILE_DIR = Path(
-    os.environ.get("EIP_EDGE_PROFILE_DIR", str(ROOT / ".edge-profile"))
+    os.environ.get("EIP_EDGE_PROFILE_DIR", str(_default_edge_profile_dir()))
 )
 FORTICLIENT_PATH = os.environ.get(
     "FORTICLIENT_PATH", r"C:\Program Files\Fortinet\FortiClient\FortiClient.exe"

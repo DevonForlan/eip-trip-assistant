@@ -1,3 +1,4 @@
+import subprocess
 import sys
 from pathlib import Path
 
@@ -140,3 +141,100 @@ def test_connect_uses_a_short_timeout_not_playwrights_180s_default(no_restart_si
 
     assert chromium.timeouts == [browser.CONNECT_TIMEOUT_MS]
     assert browser.CONNECT_TIMEOUT_MS < 180_000
+
+
+def test_kill_debug_edge_finds_the_instance_when_the_port_never_opened(monkeypatch):
+    """The failure this guards against: Edge alive, DevTools server never
+    started, so nothing is listening on 9222. A port-only lookup kills
+    nothing, the dead instance keeps the profile, and every relaunch is
+    silently swallowed by it."""
+    killed = []
+    monkeypatch.setattr(browser, "_pid_listening_on_port", lambda port: None)
+    monkeypatch.setattr(browser, "_debug_edge_pids_by_profile", lambda: [30560, 7396])
+    monkeypatch.setattr(
+        browser.subprocess, "run",
+        lambda args, **kw: killed.append(args) or subprocess.CompletedProcess(args, 0),
+    )
+
+    browser._kill_debug_edge()
+
+    assert sorted(a[2] for a in killed) == ["30560", "7396"]
+    assert all(a[0] == "taskkill" and a[-1] == "/F" for a in killed)
+
+
+def test_kill_debug_edge_combines_both_lookups_without_duplicates(monkeypatch):
+    killed = []
+    monkeypatch.setattr(browser, "_pid_listening_on_port", lambda port: 30560)
+    monkeypatch.setattr(browser, "_debug_edge_pids_by_profile", lambda: [30560, 7396])
+    monkeypatch.setattr(
+        browser.subprocess, "run",
+        lambda args, **kw: killed.append(args) or subprocess.CompletedProcess(args, 0),
+    )
+
+    browser._kill_debug_edge()
+
+    assert sorted(a[2] for a in killed) == ["30560", "7396"]
+
+
+def test_launch_clears_a_stale_instance_before_relaunching(monkeypatch):
+    """Launching on top of an instance that still owns the profile is a
+    no-op - Edge hands over the URL and exits - so the stale one has to go
+    first."""
+    calls = []
+    monkeypatch.setattr(browser, "_cdp_port_is_up", lambda: False)
+    monkeypatch.setattr(browser, "_debug_edge_pids_by_profile", lambda: [30560])
+    monkeypatch.setattr(browser, "_kill_debug_edge", lambda: calls.append("kill"))
+    monkeypatch.setattr(browser.time, "sleep", lambda s: None)
+    monkeypatch.setattr(browser.subprocess, "Popen", lambda args: calls.append("launch"))
+    monkeypatch.setattr(browser.time, "time", lambda: 1e9)  # deadline already passed
+
+    browser._launch_debug_edge_once("http://eip.example.com/EFNET/", 0)
+
+    assert calls == ["kill", "launch"], calls
+
+
+def test_profile_is_discarded_when_no_launch_ever_opens_the_port(monkeypatch, tmp_path):
+    """The profile itself can wedge: Edge starts, spawns its children and
+    never brings up the DevTools server, and no number of relaunches
+    recovers it. Recreating the profile does."""
+    profile = tmp_path / "edge-profile"
+    (profile / "Default").mkdir(parents=True)
+    (profile / "Local State").write_text("{}", encoding="utf-8")
+
+    fake_exe = tmp_path / "msedge.exe"
+    fake_exe.write_text("", encoding="utf-8")
+
+    attempts = []
+    monkeypatch.setattr(browser, "EDGE_PROFILE_DIR", profile)
+    monkeypatch.setattr(browser, "EDGE_EXE", str(fake_exe))
+    monkeypatch.setattr(browser, "_kill_debug_edge", lambda: None)
+    monkeypatch.setattr(browser.time, "sleep", lambda s: None)
+
+    def fake_launch(url, settle):
+        attempts.append(profile.exists())
+        return not profile.exists()  # only a fresh profile succeeds
+
+    monkeypatch.setattr(browser, "_launch_debug_edge_once", fake_launch)
+
+    browser.ensure_debug_edge("http://eip.example.com/EFNET/", attempts=2)
+
+    assert attempts == [True, True, False], attempts
+    assert not profile.exists(), "the wedged profile should have been discarded"
+
+
+def test_a_directory_that_is_not_a_profile_is_never_deleted(monkeypatch, tmp_path):
+    """EIP_EDGE_PROFILE_DIR comes from the environment and this deletes a
+    whole tree, so it must refuse anything without Chromium's own markers."""
+    not_a_profile = tmp_path / "important"
+    not_a_profile.mkdir()
+    (not_a_profile / "notes.txt").write_text("keep me", encoding="utf-8")
+
+    monkeypatch.setattr(browser, "EDGE_PROFILE_DIR", not_a_profile)
+
+    assert browser._discard_wedged_profile() is False
+    assert (not_a_profile / "notes.txt").exists()
+
+
+def test_discarding_an_absent_profile_is_a_no_op(monkeypatch, tmp_path):
+    monkeypatch.setattr(browser, "EDGE_PROFILE_DIR", tmp_path / "nope")
+    assert browser._discard_wedged_profile() is False
