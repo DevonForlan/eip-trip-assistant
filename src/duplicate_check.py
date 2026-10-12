@@ -238,6 +238,13 @@ def _navigate_to_sent_originals(page, timeout_ms: int = 10000, force_reload: boo
                 frame.wait_for_load_state("networkidle", timeout=8000)
             except Exception:  # noqa: BLE001 - best effort; grid may already be idle
                 pass
+            # networkidle can settle on the frame's previous document while
+            # the forced reload is still in flight; reading then returned an
+            # empty grid while a document was already listed (2026-10-12).
+            try:
+                frame.wait_for_selector("#GridView1", state="attached", timeout=8000)
+            except Exception:  # noqa: BLE001 - an empty folder may render no grid
+                pass
             return frame
         page.wait_for_timeout(300)
 
