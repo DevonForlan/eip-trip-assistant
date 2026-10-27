@@ -325,8 +325,9 @@ def find_existing_submission(page, trip, timeout_ms: int = 10000) -> list:
     return [row for row in rows if pattern.search(row.get("text", ""))]
 
 
-def find_existing_submission_via_http(trip):
-    """The same lookup over plain HTTP, bypassing the browser entirely.
+def find_rows_via_http(pattern):
+    """Open drafts-folder rows whose text matches `pattern`, fetched over
+    plain HTTP, bypassing the browser entirely.
 
     Returns the matching rows, or None if the HTTP route could not answer -
     None means "no opinion", NOT "nothing found", and callers must not read
@@ -334,33 +335,62 @@ def find_existing_submission_via_http(trip):
 
     Exists because the browser's list is not authoritative: it has been
     observed omitting a document the server already had, and a missed
-    duplicate means filing the same trip twice. Imported lazily so the
+    duplicate means filing the same thing twice. Imported lazily so the
     Playwright track does not pull in requests/SSPI just by importing this
     module.
+
+    Run this BEFORE the browser logs in, never while a browser session is
+    in use. Since the 2026-10 host move each user gets a single HRMESS
+    session, and the CollectData.aspx initialization this does takes it
+    over - a form the browser has open then lands on SessionTimeOut.aspx,
+    and a send in flight ends on ChromeADLogout.htm, reported as UNKNOWN
+    although the document was filed.
     """
     try:
         from http_eip_client import fetch_sent_box_rows
         rows = fetch_sent_box_rows()
-    except Exception:  # noqa: BLE001 - an unavailable cross-check must not block
+    except Exception:  # noqa: BLE001 - an unavailable lookup must not block
         return None
 
-    pattern = trip_row_pattern(trip)
     return [row for row in rows if pattern.search(row.get("text", ""))]
 
 
-def find_existing_submission_anywhere(page, trip, timeout_ms: int = 10000) -> list:
-    """Union of the browser view and the HTTP view, de-duplicated by
-    document number.
+def find_existing_submission_via_http(trip):
+    """find_rows_via_http() for an ESSF21 trip (see trip_row_pattern)."""
+    return find_rows_via_http(trip_row_pattern(trip))
 
-    Either source reporting a match is enough to stop: the cost of a false
-    positive is re-checking by hand, while the cost of a false negative is
-    a duplicate application in the approval workflow.
+
+def punch_row_pattern(date: str) -> "re.Pattern":
+    """Matches a missed-punch (ESSF03) row for this punch date, e.g.
+
+        202610270060 王小明 2026/10/27 11:21:27 簽核中 未完成 王小明 2026/10/16 R24071-王大明 補刷卡申請
+
+    The same two-dates trap as trip_row_pattern: the submission timestamp
+    is a date too, and it is the one followed by a clock time, so that
+    occurrence is excluded. Any time on that date counts - one missed-punch
+    form per day already carries every time for that day, so a second one
+    is a duplicate even if its times differ.
     """
-    matches = {row["docNumber"]: row for row in
-               find_existing_submission(page, trip, timeout_ms=timeout_ms)}
+    return re.compile(re.escape(date) + r"(?!\s+\d{1,2}:\d{2}:\d{2})\s.*補刷卡申請")
 
-    http_matches = find_existing_submission_via_http(trip)
-    if http_matches is not None:
-        for row in http_matches:
-            matches.setdefault(row["docNumber"], row)
-    return list(matches.values())
+
+def wait_for_rows_via_http(pattern, timeout_s: float = 60, poll_s: float = 5, sleep=time.sleep):
+    """After a send whose outcome the browser could not determine, poll the
+    server until a matching row appears.
+
+    Returns the matching rows as soon as there are any, [] if none appeared
+    in time, or None if the HTTP route never answered at all. Only safe
+    once the browser is done: see find_rows_via_http on the single
+    session.
+    """
+    deadline = time.time() + timeout_s
+    answered = None
+    while True:
+        rows = find_rows_via_http(pattern)
+        if rows is not None:
+            answered = rows
+            if rows:
+                return rows
+        if time.time() + poll_s > deadline:
+            return answered
+        sleep(poll_s)

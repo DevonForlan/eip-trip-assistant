@@ -68,14 +68,25 @@ python src/main.py
 It prompts for the trip date, times, location and reason, then:
 
 1. Prints a summary of your input → requires `y` to continue
-2. Launches and signs in to Edge, opens the form, fills it in
-3. Checks the document tracking list for an existing document on the same date and
-   **aborts if it finds one**
+2. Checks the drafts folder on the server for an existing document on the same date
+   and time, and **aborts if it finds one**
+3. Starts a freshly signed-in Edge, opens the form, fills it in
 4. Adds the traveler
 5. **Reads the actual values back off the browser and displays them** → requires a
    second `y` before clicking send
 
 Any answer other than `y` stops immediately, leaving the form on screen unsent.
+
+### Missed punch (補刷卡申請)
+
+```powershell
+python src/punch_main.py
+```
+
+Prompts for the date, one to six punch times, the reason (忘記刷卡 / 未發卡片 / 其他)
+and an optional note, then follows the same steps: a server-side check for an
+existing missed-punch form on that date, filling the live form, reading it back,
+and a second `y` before sending.
 
 ## Safety design
 
@@ -84,9 +95,11 @@ limits are in place:
 
 - **Two-stage confirmation**: before sending, field values are read back off the
   live browser rather than echoing the variables you typed
-- **Duplicate protection**: the browser view and an independent HTTP source are
-  both queried before sending (the browser's list serves stale, cached data);
-  a matching date/time from either source aborts the run
+- **Duplicate protection**: the drafts folder is queried over HTTP before the
+  browser signs in (the browser's own list serves stale, cached data); a match
+  aborts the run, and so does a query that cannot be answered. It has to run
+  first: EIP allows one session per user, and the HTTP sign-in ends any browser
+  session already open
 - **An explicit state machine** (`src/state_machine.py`): an expired session is a
   hard stop, and **nothing is ever resubmitted automatically**
 - **Classified dialog handling** (`src/dialog_handler.py`): beforeunload is
@@ -95,7 +108,8 @@ limits are in place:
   prompt are never auto-accepted
 - **Submission verification** (`verify_submission`): success is judged from the
   document number and the read-only redirect, never from "the screen went blank".
-  An UNKNOWN result explicitly asks for human confirmation and forbids resending
+  An UNKNOWN result is then checked against the server's drafts folder; only a
+  single matching document counts as success, and nothing is ever resent
 - **The HTTP route is read-only by default**: `HttpEipClient` blocks
   `post/put/patch/delete` outright; changing state requires passing
   `read_only=False` explicitly
@@ -118,7 +132,9 @@ src/
   state_machine.py   # flow state machine (SESSION_EXPIRED is a hard stop)
   dialog_handler.py  # classified dialog handling
   network_log.py     # network logging, with masking
-  main.py            # interactive CLI entry point
+  main.py            # interactive CLI entry point (trip registration)
+  punch_form.py      # fill in, send and verify the missed-punch form
+  punch_main.py      # interactive CLI entry point (missed punch)
 
   http_eip_client.py # pure HTTP + SSPI route (read-only by default)
   webforms_state.py  # ASP.NET WebForms form parsing (successful-controls rules)
@@ -126,7 +142,7 @@ src/
 
 scripts/             # research and diagnostic POCs (mostly read-only)
 docs/                # the full investigation and verification record
-tests/               # 103 unit tests
+tests/               # 144 unit tests
 ```
 
 ## Tests

@@ -146,6 +146,25 @@ def _require_authenticated(page, flow: TripFlow, step_reason: str) -> None:
         )
 
 
+def confirm_on_server(pattern, result, detail):
+    """Settle an UNKNOWN send by asking the server. On this host a send
+    that succeeded routinely ends on the logout page, which the browser
+    can only report as UNKNOWN. Exactly one matching row is a success;
+    anything else stays UNKNOWN for a human to look at. Never resends."""
+    print("\nThe browser could not confirm the result; checking the drafts folder "
+          "on the server (up to a minute)...")
+    rows = duplicate_check.wait_for_rows_via_http(pattern)
+    if rows and len(rows) == 1:
+        return (trip_form.SubmissionResult.SUCCESS,
+                f"Confirmed on the server: {rows[0]['docNumber']}")
+    if rows:
+        found = ", ".join(r["docNumber"] for r in rows)
+        return result, f"{detail} | The server has SEVERAL matching documents: {found}"
+    if rows is None:
+        return result, f"{detail} | The drafts folder could not be queried either."
+    return result, f"{detail} | No matching document appeared on the server within a minute."
+
+
 def main():
     trip = collect_trip_request()
     confirmed = show_confirmation(trip)
@@ -154,15 +173,34 @@ def main():
         print("\nCancelled. Nothing was sent.")
         return
 
-    print(f"\nConnecting to the running, logged-in Edge (CDP: {browser.CDP_URL})...")
+    print("\nChecking the server for an existing document with the same date/time, "
+          "to avoid a duplicate submission...")
+    # Over HTTP, and before the browser logs in: each user gets a single EIP
+    # session, so this lookup ends any browser session already open. Run any
+    # later and the form it would be guarding dies under it.
+    existing = duplicate_check.find_existing_submission_via_http(trip)
+    if existing is None:
+        print("\n[error] Could not query the drafts folder, so a duplicate cannot be "
+              "ruled out. Stopped without sending.")
+        return
+    if existing:
+        print("\n[error] Found what looks like a duplicate in the drafts folder. "
+              "Stopped without sending:")
+        for row in existing:
+            print(f"  - {row['docNumber']}: {row['text']}")
+        print("Check those documents first, then decide whether to resubmit "
+              "with a different date/time.")
+        return
+
+    print(f"\nStarting a freshly logged-in Edge (CDP: {browser.CDP_URL})...")
     print("(EIP needs Windows Integrated Authentication, so this attaches to that\n"
-          " browser rather than launching a fresh one.)")
+          " browser rather than launching one through Playwright.)")
 
     flow = TripFlow()
 
     with sync_playwright() as pw:
         try:
-            br, context = browser.attach_context(pw)
+            br, context = browser.attach_context(pw, fresh_session=True)
         except browser.CdpConnectionError as e:
             print(f"\n[error] {e}")
             return
@@ -195,27 +233,6 @@ def main():
                 return
             flow.transition(TripState.FORM_FILLED, "filled the form")
 
-            print("\nChecking form tracking for an existing document with the same "
-                  "date/time, to avoid a duplicate submission...")
-            # Checks the browser view AND an independent HTTP query - the
-            # browser's list has been caught serving cached results, and a
-            # missed duplicate means filing the same trip twice.
-            existing = duplicate_check.find_existing_submission_anywhere(page, trip)
-            if existing:
-                flow.transition(TripState.FAILED, "possible duplicate document found")
-                print("\n[error] Found what looks like a duplicate in the drafts folder. "
-                      "Stopped without sending:")
-                for row in existing:
-                    print(f"  - {row['docNumber']}: {row['text']}")
-                print("Check those documents first, then decide whether to resubmit "
-                      "with a different date/time.")
-                return
-
-            # Checking form tracking switches the sidebar and backgrounds
-            # the trip-form tab (its content becomes hidden, not just
-            # unfocused) - bring it back before touching the form again.
-            eip_client.reactivate_trip_form_tab(page)
-
             employee_code = trip_form.get_filler_employee_code(page)
             traveler_name = trip_form.add_traveler(page, employee_code)
             _require_authenticated(page, flow, "after saving the traveler detail")
@@ -231,6 +248,9 @@ def main():
             trip_form.submit_form(page)
 
             result, detail = trip_form.verify_submission(page)
+            if result == trip_form.SubmissionResult.UNKNOWN:
+                result, detail = confirm_on_server(
+                    duplicate_check.trip_row_pattern(trip), result, detail)
             if result == trip_form.SubmissionResult.SUCCESS:
                 flow.transition(TripState.SENT, detail)
                 print(f"\nTrip application sent successfully. {detail}")

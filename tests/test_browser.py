@@ -238,3 +238,22 @@ def test_a_directory_that_is_not_a_profile_is_never_deleted(monkeypatch, tmp_pat
 def test_discarding_an_absent_profile_is_a_no_op(monkeypatch, tmp_path):
     monkeypatch.setattr(browser, "EDGE_PROFILE_DIR", tmp_path / "nope")
     assert browser._discard_wedged_profile() is False
+
+
+class FakeBrowserWithPage:
+    contexts = [type("Ctx", (), {"pages": ["page"]})()]
+
+
+@pytest.mark.parametrize("fresh, expected", [(False, ["ensure"]), (True, ["kill", "ensure"])])
+def test_fresh_session_closes_the_old_edge_before_launching(monkeypatch, fresh, expected):
+    """After an HTTP lookup has taken over the one EIP session, an Edge that
+    was already open holds a dead session - it must be replaced, not reused."""
+    calls = []
+    monkeypatch.setattr(browser, "ensure_vpn_connected", lambda: True)
+    monkeypatch.setattr(browser, "_kill_debug_edge", lambda: calls.append("kill"))
+    monkeypatch.setattr(browser, "_ensure_debug_edge_or_explain", lambda: calls.append("ensure"))
+    monkeypatch.setattr(browser, "_connect_with_recovery", lambda pw: FakeBrowserWithPage())
+
+    browser.attach_context(None, fresh_session=fresh)
+
+    assert calls == expected

@@ -368,11 +368,16 @@ def _ensure_debug_edge_or_explain() -> None:
         )
 
 
-def attach_context(playwright: Playwright) -> tuple[Browser, BrowserContext]:
+def attach_context(playwright: Playwright, fresh_session: bool = False) -> tuple[Browser, BrowserContext]:
     """Ensure VPN is up and a debug Edge pointed at EIP is running, then
     attach Playwright to it. Playwright only reads/fills the DOM here -
     it never navigates, since CDP-driven navigation doesn't get automatic
     NTLM SSO the way a command-line-argument launch does.
+
+    fresh_session closes any running debug Edge first so the browser logs
+    in anew. Needed after an HTTP lookup (duplicate_check.find_rows_via_http):
+    each user gets a single EIP session, the HTTP login took it over, and an
+    Edge that was already open is left holding a dead one.
 
     A long-running debug Edge can reach a state where the CDP websocket
     still accepts a connection but connect_over_cdp then hangs during
@@ -388,6 +393,8 @@ def attach_context(playwright: Playwright) -> tuple[Browser, BrowserContext]:
             "Check that FortiClient has connected, then retry."
         )
 
+    if fresh_session:
+        _kill_debug_edge()
     _ensure_debug_edge_or_explain()
 
     try:

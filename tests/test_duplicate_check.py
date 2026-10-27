@@ -199,59 +199,67 @@ def test_http_cross_check_returns_none_when_unavailable(monkeypatch):
         make_trip("2026/08/11", "09:00", "18:30")) is None
 
 
-def test_http_cross_check_finds_what_the_browser_missed(monkeypatch):
-    """The dangerous direction: the browser's cached list omits a document
-    the server already has, so without this the same trip gets filed twice."""
+def test_http_lookup_finds_a_matching_trip(monkeypatch):
     import http_eip_client
 
-    monkeypatch.setattr(
-        duplicate_check, "_navigate_to_sent_originals",
-        lambda page, timeout_ms=10000, force_reload=True: FakeGridFrame([]),  # browser sees nothing
-    )
     monkeypatch.setattr(http_eip_client, "fetch_sent_box_rows", lambda: [
         {"docNumber": "202601040001",
          "text": "202601040001 王小明 2026/08/15 16:13:44 簽核中 未完成 王小明 2026/08/06 09:00-18:30"},
     ])
 
-    found = duplicate_check.find_existing_submission_anywhere(
-        page=None, trip=make_trip("2026/08/06", "09:00", "18:30"))
+    found = duplicate_check.find_existing_submission_via_http(make_trip("2026/08/06", "09:00", "18:30"))
 
     assert [r["docNumber"] for r in found] == ["202601040001"]
 
 
-def test_matches_from_both_sources_are_not_double_counted(monkeypatch):
+PUNCH_ROW = ("202610270060 王小明 2026/10/27 11:21:27 簽核中 未完成 王小明 2026/10/16 "
+             "R24071-王大明 補刷卡申請")
+
+
+def test_punch_pattern_matches_the_punch_date():
+    assert duplicate_check.punch_row_pattern("2026/10/16").search(PUNCH_ROW)
+
+
+def test_punch_pattern_ignores_the_submission_timestamp():
+    """Filed on 10/27 for 10/16 - that is not a punch form for 10/27."""
+    assert not duplicate_check.punch_row_pattern("2026/10/27").search(PUNCH_ROW)
+
+
+def test_punch_pattern_ignores_trip_rows():
+    trip_row = REAL_ROWS[0]["text"]
+    assert not duplicate_check.punch_row_pattern("2026/08/04").search(trip_row)
+
+
+def test_trip_pattern_ignores_punch_rows():
+    assert not duplicate_check.trip_row_pattern(make_trip("2026/10/16", "09:00", "18:30")).search(PUNCH_ROW)
+
+
+def test_wait_for_rows_returns_as_soon_as_the_row_appears(monkeypatch):
     import http_eip_client
 
-    row = {"docNumber": "202601020001",
-           "text": "202601020001 王小明 2026/08/12 10:51:27 簽核中 未完成 王小明 2026/08/04 09:00-18:30"}
-    monkeypatch.setattr(
-        duplicate_check, "_navigate_to_sent_originals",
-        lambda page, timeout_ms=10000, force_reload=True: FakeGridFrame([row]),
-    )
-    monkeypatch.setattr(http_eip_client, "fetch_sent_box_rows", lambda: [row])
+    answers = iter([[], [], [{"docNumber": "1", "text": PUNCH_ROW}]])
+    monkeypatch.setattr(http_eip_client, "fetch_sent_box_rows", lambda: next(answers))
+    sleeps = []
 
-    found = duplicate_check.find_existing_submission_anywhere(
-        page=None, trip=make_trip("2026/08/04", "09:00", "18:30"))
+    rows = duplicate_check.wait_for_rows_via_http(
+        duplicate_check.punch_row_pattern("2026/10/16"), timeout_s=60, poll_s=5, sleep=sleeps.append)
 
-    assert len(found) == 1
+    assert [r["docNumber"] for r in rows] == ["1"]
+    assert len(sleeps) == 2
 
 
-def test_browser_result_still_stands_when_http_is_unavailable(monkeypatch):
+def test_wait_for_rows_distinguishes_no_answer_from_no_row(monkeypatch):
     import http_eip_client
 
-    row = {"docNumber": "202601020001",
-           "text": "202601020001 王小明 2026/08/12 10:51:27 簽核中 未完成 王小明 2026/08/04 09:00-18:30"}
-    monkeypatch.setattr(
-        duplicate_check, "_navigate_to_sent_originals",
-        lambda page, timeout_ms=10000, force_reload=True: FakeGridFrame([row]),
-    )
-    monkeypatch.setattr(http_eip_client, "fetch_sent_box_rows",
-                        lambda: (_ for _ in ()).throw(RuntimeError("network unreachable")))
+    pattern = duplicate_check.punch_row_pattern("2026/10/16")
+    monkeypatch.setattr(http_eip_client, "fetch_sent_box_rows", lambda: [])
+    assert duplicate_check.wait_for_rows_via_http(pattern, timeout_s=0, sleep=lambda s: None) == []
 
-    found = duplicate_check.find_existing_submission_anywhere(
-        page=None, trip=make_trip("2026/08/04", "09:00", "18:30"))
+    def boom():
+        raise RuntimeError("SSPI unavailable")
 
-    assert len(found) == 1
+    monkeypatch.setattr(http_eip_client, "fetch_sent_box_rows", boom)
+    assert duplicate_check.wait_for_rows_via_http(pattern, timeout_s=0, sleep=lambda s: None) is None
 
 
 def test_visible_exact_text_count_survives_a_dead_frame():
